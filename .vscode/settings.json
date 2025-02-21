@@ -1,0 +1,39 @@
+{
+	"cSpell.words": [
+		"airkorea",
+		"dataframes",
+		"EIGHTYFIVE",
+		"geoalchemy",
+		"geopandas",
+		"Geovar",
+		"Geovariable",
+		"geovariables",
+		"KTDB",
+		"Landuse",
+		"molit",
+		"Ndvi",
+		"notlike",
+		"outerjoin",
+		"pydantic",
+		"railstation",
+		"rast",
+		"samp",
+		"sessionmaker",
+		"SGIS",
+		"sido",
+		"SIXTYFIVE",
+		"SIXTYFOUR",
+		"sqlalchemy",
+		"sqlmodel"
+	],
+	"python.testing.pytestArgs": [
+		"tests"
+	],
+	"python.testing.unittestEnabled": false,
+	"python.testing.pytestEnabled": true,
+	"[python]": {
+		"editor.defaultFormatter": "charliermarsh.ruff"
+	},
+	"python.analysis.typeCheckingMode": "basic",
+	"python.analysis.autoImportCompletions": true
+}
