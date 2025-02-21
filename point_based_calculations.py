@@ -105,7 +105,75 @@ class PointAbstractCalculator(ABC):
             )
 
 
-class BufferCountCalculator(PointAbstractCalculator):
+class JggCentroidRasterValueCalculator(PointAbstractCalculator):
+    """Calculator for raster value."""
+
+    def __init__(self):
+        pass
+
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the point-based calculation.
+
+        Returns:
+            DataFrame containing calculation results
+        """
+        if self.table_name == "dem":
+            column_name = "Altitude_k"
+        elif self.table_name == "dsm":
+            column_name = "Altitude_a"
+        else:
+            raise ValueError(f"Invalid table name: {self.table_name}")
+
+        sql = text(
+            f"""SELECT src.tot_reg_cd, ST_Value(dst.rast, 1, src.geom) AS "{column_name}"
+            FROM jgg_centroid_adjusted AS src, {self.table_name} AS dst
+            WHERE ST_Intersects(src.geom, dst.rast)
+            ORDER BY src.tot_reg_cd;
+            """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
+class DemRasterValueCalculator(JggCentroidRasterValueCalculator):
+    """Calculator for dem raster value."""
+
+    @property
+    def table_name(self) -> str:
+        return "dem"
+
+    @property
+    def label_prefix(self):
+        pass
+
+    @property
+    def valid_years(self):
+        pass
+
+
+class DsmRasterValueCalculator(JggCentroidRasterValueCalculator):
+    """Calculator for dsm raster value."""
+
+    @property
+    def table_name(self) -> str:
+        return "dsm"
+
+    @property
+    def label_prefix(self):
+        pass
+
+    @property
+    def valid_years(self):
+        pass
+
+
+class JggCentroidBufferCountCalculator(PointAbstractCalculator):
     """Calculator for buffer count."""
 
     def __init__(self, buffer_size: BufferSize, year: int):
@@ -146,7 +214,7 @@ class BufferCountCalculator(PointAbstractCalculator):
             raise
 
 
-class BusStopCountCalculator(BufferCountCalculator):
+class BusStopCountCalculator(JggCentroidBufferCountCalculator):
     """Calculator for bus stop points."""
 
     @property
@@ -162,7 +230,7 @@ class BusStopCountCalculator(BufferCountCalculator):
         return [2023]
 
 
-class RailStationCountCalculator(BufferCountCalculator):
+class RailStationCountCalculator(JggCentroidBufferCountCalculator):
     """Calculator for rail station points."""
 
     @property
@@ -184,7 +252,7 @@ class RailStationCountCalculator(BufferCountCalculator):
         super().validate_year()
 
 
-class ShortestDistanceCalculator(PointAbstractCalculator):
+class JggCentroidShortestDistanceCalculator(PointAbstractCalculator):
     """Calculator for shortest distance to the nearest point."""
 
     def __init__(self, year: int):
@@ -230,7 +298,7 @@ class ShortestDistanceCalculator(PointAbstractCalculator):
             raise
 
 
-class BusStopDistanceCalculator(ShortestDistanceCalculator):
+class BusStopDistanceCalculator(JggCentroidShortestDistanceCalculator):
     """Calculator for shortest distance to the nearest bus stop."""
 
     @property
@@ -251,7 +319,7 @@ class BusStopDistanceCalculator(ShortestDistanceCalculator):
         return [2023]
 
 
-class AirportDistanceCalculator(ShortestDistanceCalculator):
+class AirportDistanceCalculator(JggCentroidShortestDistanceCalculator):
     """Calculator for shortest distance to the nearest airport."""
 
     @property
@@ -272,7 +340,7 @@ class AirportDistanceCalculator(ShortestDistanceCalculator):
         return [2000, 2005, 2010, 2015, 2020]
 
 
-class RailDistanceCalculator(ShortestDistanceCalculator):
+class RailDistanceCalculator(JggCentroidShortestDistanceCalculator):
     """Calculator for shortest distance to the nearest rail."""
 
     @property
@@ -299,7 +367,7 @@ class RailDistanceCalculator(ShortestDistanceCalculator):
         super().validate_year()
 
 
-class RailStationDistanceCalculator(ShortestDistanceCalculator):
+class RailStationDistanceCalculator(JggCentroidShortestDistanceCalculator):
     """Calculator for shortest distance to the nearest rail station."""
 
     @property
@@ -326,7 +394,7 @@ class RailStationDistanceCalculator(ShortestDistanceCalculator):
         super().validate_year()
 
 
-class CoastlineDistanceCalculator(ShortestDistanceCalculator):
+class CoastlineDistanceCalculator(JggCentroidShortestDistanceCalculator):
     """Calculator for shortest distance to the nearest coastline."""
 
     @property
@@ -347,7 +415,7 @@ class CoastlineDistanceCalculator(ShortestDistanceCalculator):
         return [2000, 2005, 2010, 2015, 2020]
 
 
-class MdlDistanceCalculator(ShortestDistanceCalculator):
+class MdlDistanceCalculator(JggCentroidShortestDistanceCalculator):
     """Calculator for shortest distance to the nearest coastline."""
 
     @property
@@ -368,7 +436,7 @@ class MdlDistanceCalculator(ShortestDistanceCalculator):
         return [2000, 2005, 2010, 2015, 2020]
 
 
-class PortDistanceCalculator(ShortestDistanceCalculator):
+class PortDistanceCalculator(JggCentroidShortestDistanceCalculator):
     """Calculator for shortest distance to the nearest port."""
 
     @property
@@ -384,7 +452,7 @@ class PortDistanceCalculator(ShortestDistanceCalculator):
         return [2000, 2005, 2010, 2015, 2020]
 
 
-class Mr1DistanceCalculator(ShortestDistanceCalculator):
+class Mr1DistanceCalculator(JggCentroidShortestDistanceCalculator):
     """Calculator for shortest distance to the nearest mr1."""
 
     @property
@@ -400,7 +468,7 @@ class Mr1DistanceCalculator(ShortestDistanceCalculator):
         return [2005, 2010, 2015, 2020]
 
 
-class Mr2DistanceCalculator(ShortestDistanceCalculator):
+class Mr2DistanceCalculator(JggCentroidShortestDistanceCalculator):
     """Calculator for shortest distance to the nearest mr2."""
 
     @property
@@ -416,7 +484,7 @@ class Mr2DistanceCalculator(ShortestDistanceCalculator):
         return [2005, 2010, 2015, 2020]
 
 
-class RoadDistanceCalculator(ShortestDistanceCalculator):
+class RoadDistanceCalculator(JggCentroidShortestDistanceCalculator):
     """Calculator for shortest distance to the nearest road."""
 
     @property
@@ -432,7 +500,7 @@ class RoadDistanceCalculator(ShortestDistanceCalculator):
         return [2005, 2010, 2015, 2020]
 
 
-class RiverDistanceCalculator(ShortestDistanceCalculator):
+class RiverDistanceCalculator(JggCentroidShortestDistanceCalculator):
     """Calculator for shortest distance to the nearest river."""
 
     @property
@@ -448,7 +516,55 @@ class RiverDistanceCalculator(ShortestDistanceCalculator):
         return [2000, 2005, 2010, 2015, 2020]
 
 
+class CarMeanCalculator(PointAbstractCalculator):
+    """Calculator for car mean."""
+
+    @property
+    def table_name(self) -> str:
+        return "car_registration"
+
+    @property
+    def label_prefix(self) -> str:
+        return "C_Car"
+
+    @property
+    def valid_years(self) -> list[int]:
+        """List of valid years for this calculator."""
+        return [2000, 2005, 2010, 2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the point-based calculation.
+
+        Returns:
+            DataFrame containing calculation results
+        """
+        self.validate_year()
+        column_name = self.label_prefix
+        sql = text(
+            f"""
+            SELECT
+                a.tot_reg_cd,
+                b.value as "{column_name}_sigungu_mean_registration"
+            FROM
+                jgg_centroid_adjusted a
+                LEFT JOIN {self.table_name} b
+                    ON LEFT(a.tot_reg_cd::text, 5) = b.sgg_cd::text
+            WHERE b.year = {self.year}
+            ORDER BY
+                a.tot_reg_cd;
+            """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
 if __name__ == "__main__":
     # Example usage
-    df = BusStopCountCalculator(BufferSize.SMALL, 2023).calculate()
-    df.to_csv("c_bus_300.csv")
+    df = CarMeanCalculator(year=2020).calculate()
+    df.to_csv("car_mean.csv")
