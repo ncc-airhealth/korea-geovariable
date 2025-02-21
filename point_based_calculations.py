@@ -51,18 +51,16 @@ def merge_dataframes_by_id(
     return merged_df[columns]
 
 
-class JggCentroidAbstractCalculator(ABC):
+class PointAbstractCalculator(ABC):
     """Base class for point-based calculations."""
 
-    def __init__(self, buffer_size: BufferSize, year: int):
+    def __init__(self, year: int):
         """
-        Initialize calculator with buffer size and year.
+        Initialize calculator with year.
 
         Args:
-            buffer_size: Size of the buffer in meters
             year: Reference year for the calculation
         """
-        self.buffer_size = buffer_size
         self.year = year
 
     @property
@@ -83,6 +81,16 @@ class JggCentroidAbstractCalculator(ABC):
         """List of valid years for this calculator."""
         pass
 
+    @abstractmethod
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the point-based calculation.
+
+        Returns:
+            DataFrame containing calculation results
+        """
+        pass
+
     def validate_year(self) -> None:
         """
         Validate if the year is valid for this calculation.
@@ -96,36 +104,13 @@ class JggCentroidAbstractCalculator(ABC):
                 f"Invalid year {self.year}. Valid years are: {valid_years_str}"
             )
 
-    @abstractmethod
-    def calculate(self) -> pd.DataFrame:
-        """
-        Execute the point-based calculation.
 
-        Returns:
-            DataFrame containing calculation results
-        """
-        self.validate_year()
-        pass
+class BufferCountCalculator(PointAbstractCalculator):
+    """Calculator for buffer count."""
 
-
-class BusStopCalculator(JggCentroidAbstractCalculator):
-    """Calculator for bus stop points."""
-
-    @property
-    def table_name(self) -> str:
-        return "bus_stop"
-
-    @property
-    def label_prefix(self) -> str:
-        return "C_Bus"
-
-    @property
-    def valid_years(self) -> list[int]:
-        return [2023]
-
-    def validate_year(self) -> None:
-        if self.year != 2023:
-            raise ValueError("Only year 2023 is available for bus stops!")
+    def __init__(self, buffer_size: BufferSize, year: int):
+        super().__init__(year)
+        self.buffer_size = buffer_size
 
     def calculate(self) -> pd.DataFrame:
         """
@@ -141,7 +126,7 @@ class BusStopCalculator(JggCentroidAbstractCalculator):
             f"""
             SELECT
                 jb.tot_reg_cd,
-                COUNT(t.*) as {column_name}
+                COUNT(t.*) as "{column_name}"
             FROM
                 public.jgg_centroid_adjusted_buffered jb
                 LEFT JOIN public.{self.table_name} t
@@ -161,7 +146,23 @@ class BusStopCalculator(JggCentroidAbstractCalculator):
             raise
 
 
-class RailStationCalculator(JggCentroidAbstractCalculator):
+class BusStopCountCalculator(BufferCountCalculator):
+    """Calculator for bus stop points."""
+
+    @property
+    def table_name(self) -> str:
+        return "bus_stop"
+
+    @property
+    def label_prefix(self) -> str:
+        return "C_Bus"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2023]
+
+
+class RailStationCountCalculator(BufferCountCalculator):
     """Calculator for rail station points."""
 
     @property
@@ -182,6 +183,19 @@ class RailStationCalculator(JggCentroidAbstractCalculator):
             self.year = 2005
         super().validate_year()
 
+
+class ShortestDistanceCalculator(PointAbstractCalculator):
+    """Calculator for shortest distance to the nearest point."""
+
+    def __init__(self, year: int):
+        """
+        Initialize calculator with year.
+
+        Args:
+            year: Reference year for the calculation
+        """
+        self.year = year
+
     def calculate(self) -> pd.DataFrame:
         """
         Execute the point-based calculation.
@@ -190,20 +204,20 @@ class RailStationCalculator(JggCentroidAbstractCalculator):
             DataFrame containing calculation results
         """
         self.validate_year()
-        column_name = f"{self.label_prefix}_{str(self.buffer_size.value).zfill(4)}"
+        column_name = f"{self.label_prefix}_{self.year}"
 
         sql = text(
             f"""
             SELECT
-                jb.tot_reg_cd,
-                COUNT(t.*) as {column_name}
+                src.tot_reg_cd,
+                min(ST_Distance(src.geom, dst.geometry)) AS "{column_name}"
             FROM
-                public.jgg_centroid_adjusted_buffered jb
-                LEFT JOIN public.{self.table_name} t
-                    ON ST_Within(t.geometry, jb.geom_{self.buffer_size.value})
-                    AND t.year = {self.year}
+                public.jgg_centroid_adjusted AS src
+                JOIN public."{self.table_name}" AS dst ON dst.year = {self.year}
             GROUP BY
-                jb.tot_reg_cd;
+                src.tot_reg_cd
+            ORDER BY
+                src.tot_reg_cd;
             """
         )
 
@@ -216,7 +230,225 @@ class RailStationCalculator(JggCentroidAbstractCalculator):
             raise
 
 
+class BusStopDistanceCalculator(ShortestDistanceCalculator):
+    """Calculator for shortest distance to the nearest bus stop."""
+
+    @property
+    def table_name(self) -> str:
+        return "bus_stop"
+
+    @property
+    def label_prefix(self) -> str:
+        return "D_Bus"
+
+    @property
+    def valid_years(self) -> list[int]:
+        """Return list of valid years for bus stop data.
+
+        Returns:
+            List containing valid years (currently only 2023)
+        """
+        return [2023]
+
+
+class AirportDistanceCalculator(ShortestDistanceCalculator):
+    """Calculator for shortest distance to the nearest airport."""
+
+    @property
+    def table_name(self) -> str:
+        return "airport"
+
+    @property
+    def label_prefix(self) -> str:
+        return "D_Airport"
+
+    @property
+    def valid_years(self) -> list[int]:
+        """Return list of valid years for airport data.
+
+        Returns:
+            List containing valid years (currently only 2023)
+        """
+        return [2000, 2005, 2010, 2015, 2020]
+
+
+class RailDistanceCalculator(ShortestDistanceCalculator):
+    """Calculator for shortest distance to the nearest rail."""
+
+    @property
+    def table_name(self) -> str:
+        return "rails"
+
+    @property
+    def label_prefix(self) -> str:
+        return "D_Rail"
+
+    @property
+    def valid_years(self) -> list[int]:
+        """Return list of valid years for rail data.
+
+        Returns:
+            List containing valid years (You can use 2005 to calculate 2000)
+        """
+        return [2000, 2005, 2010, 2015, 2020]
+
+    def validate_year(self) -> None:
+        if self.year == 2000:
+            logger.warning("Year 2000 will be calculated as 2005!")
+            self.year = 2005
+        super().validate_year()
+
+
+class RailStationDistanceCalculator(ShortestDistanceCalculator):
+    """Calculator for shortest distance to the nearest rail station."""
+
+    @property
+    def table_name(self) -> str:
+        return "railstation"
+
+    @property
+    def label_prefix(self) -> str:
+        return "D_Sub"
+
+    @property
+    def valid_years(self) -> list[int]:
+        """Return list of valid years for rail data.
+
+        Returns:
+            List containing valid years (You can use 2005 to calculate 2000)
+        """
+        return [2000, 2005, 2010, 2015, 2020]
+
+    def validate_year(self) -> None:
+        if self.year == 2000:
+            logger.warning("Year 2000 will be calculated as 2005!")
+            self.year = 2005
+        super().validate_year()
+
+
+class CoastlineDistanceCalculator(ShortestDistanceCalculator):
+    """Calculator for shortest distance to the nearest coastline."""
+
+    @property
+    def table_name(self) -> str:
+        return "coastline"
+
+    @property
+    def label_prefix(self) -> str:
+        return "D_Coast"
+
+    @property
+    def valid_years(self) -> list[int]:
+        """Return list of valid years for rail data.
+
+        Returns:
+            List containing valid years
+        """
+        return [2000, 2005, 2010, 2015, 2020]
+
+
+class MdlDistanceCalculator(ShortestDistanceCalculator):
+    """Calculator for shortest distance to the nearest coastline."""
+
+    @property
+    def table_name(self) -> str:
+        return "mdl"
+
+    @property
+    def label_prefix(self) -> str:
+        return "D_North"
+
+    @property
+    def valid_years(self) -> list[int]:
+        """Return list of valid years for rail data.
+
+        Returns:
+            List containing valid years
+        """
+        return [2000, 2005, 2010, 2015, 2020]
+
+
+class PortDistanceCalculator(ShortestDistanceCalculator):
+    """Calculator for shortest distance to the nearest port."""
+
+    @property
+    def table_name(self) -> str:
+        return "port"
+
+    @property
+    def label_prefix(self) -> str:
+        return "D_Port"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2000, 2005, 2010, 2015, 2020]
+
+
+class Mr1DistanceCalculator(ShortestDistanceCalculator):
+    """Calculator for shortest distance to the nearest mr1."""
+
+    @property
+    def table_name(self) -> str:
+        return "mr1"
+
+    @property
+    def label_prefix(self) -> str:
+        return "D_MR1"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2005, 2010, 2015, 2020]
+
+
+class Mr2DistanceCalculator(ShortestDistanceCalculator):
+    """Calculator for shortest distance to the nearest mr2."""
+
+    @property
+    def table_name(self) -> str:
+        return "mr2"
+
+    @property
+    def label_prefix(self) -> str:
+        return "D_MR2"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2005, 2010, 2015, 2020]
+
+
+class RoadDistanceCalculator(ShortestDistanceCalculator):
+    """Calculator for shortest distance to the nearest road."""
+
+    @property
+    def table_name(self) -> str:
+        return "roads"
+
+    @property
+    def label_prefix(self) -> str:
+        return "D_Road"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2005, 2010, 2015, 2020]
+
+
+class RiverDistanceCalculator(ShortestDistanceCalculator):
+    """Calculator for shortest distance to the nearest river."""
+
+    @property
+    def table_name(self) -> str:
+        return "river"
+
+    @property
+    def label_prefix(self) -> str:
+        return "D_River"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2000, 2005, 2010, 2015, 2020]
+
+
 if __name__ == "__main__":
     # Example usage
-    df = RailStationCalculator(BufferSize.SMALL, 2000).calculate()
-    df.to_csv("./out/jgg_centroid/railstation_300_2000.csv")
+    df = BusStopCountCalculator(BufferSize.SMALL, 2023).calculate()
+    df.to_csv("c_bus_300.csv")
