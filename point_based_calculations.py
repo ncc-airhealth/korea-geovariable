@@ -564,7 +564,99 @@ class CarMeanCalculator(PointAbstractCalculator):
             raise
 
 
+class BusinessRegistrationCountCalculator(PointAbstractCalculator):
+    """Calculator for business registration count."""
+
+    def __init__(self, buffer_size: BufferSize, year: int):
+        """
+        Initialize calculator with buffer size and year.
+
+        Args:
+            buffer_size: Size of the buffer zone
+            year: Reference year for the calculation
+        """
+        super().__init__(year)
+        self.buffer_size = buffer_size
+
+    @property
+    def table_name(self) -> str:
+        return "jgg_adjusted_sgis_bnu"
+
+    @property
+    def label_prefix(self) -> str:
+        return "B_bnu"
+
+    @property
+    def valid_years(self) -> list[int]:
+        """Return list of valid years for business registration data."""
+        return [2000, 2005, 2010, 2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the business registration count calculation with buffer zones.
+
+        Returns:
+            DataFrame containing calculation results with business registration count variables
+        """
+        self.validate_year()
+        buffer_value = self.buffer_size.value
+
+        # Generate column expressions for all 19 business registration types
+        bnu_columns = [
+            f'COALESCE(SUM(p.cp_bnu_{str(i).zfill(3)}::float * ia.intersect_area / ia.border_area), 0) AS "{self.label_prefix}_{i}_{str(buffer_value).zfill(4)}"'
+            for i in range(1, 20)
+        ]
+
+        # Add expression for sum of all business registration count values
+        sum_expr = " + ".join(
+            [
+                f"COALESCE(SUM(p.cp_bnu_{str(i).zfill(3)}::float * ia.intersect_area / ia.border_area), 0)"
+                for i in range(1, 20)
+            ]
+        )
+        bnu_columns.append(f'{sum_expr} AS "B_bnu_{str(buffer_value).zfill(4)}"')
+
+        column_expr = ",\n    ".join(bnu_columns)
+
+        sql = text(
+            f"""
+            SELECT
+                ia.center_reg_cd as tot_reg_cd,
+                {column_expr}
+            FROM
+                intersection_areas_{buffer_value} ia
+            LEFT JOIN
+                {self.table_name} p
+                ON p.tot_reg_cd = ia.border_reg_cd
+                AND p.year = {self.year}
+            GROUP BY
+                ia.center_reg_cd
+            ORDER BY
+                ia.center_reg_cd;
+            """
+        )
+
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
+# TODO: Worker Count
+# TODO: House Type Count
+
+# TODO: Emission
+# TODO: Traffic
+# TODO: Population
+# TODO: NDVI
+# TODO: Landuse
+# TODO: Relative DEM, DSM
+
+
 if __name__ == "__main__":
     # Example usage
-    df = CarMeanCalculator(year=2020).calculate()
-    df.to_csv("car_mean.csv")
+    df = BusinessRegistrationCountCalculator(BufferSize.VERY_SMALL, 2020).calculate()
+    df.to_csv("business_registration_count.csv")
