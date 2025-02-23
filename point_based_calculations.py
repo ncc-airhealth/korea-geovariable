@@ -816,6 +816,13 @@ class HouseTypeCountCalculator(PointAbstractCalculator):
 
 
 if __name__ == "__main__":
-    # Example usage
-    df = HouseTypeCountCalculator(BufferSize.VERY_SMALL, 2020).calculate()
-    df.to_csv("house_type_count.csv")
+    for buffer_size in BufferSize:
+        for year in [2000, 2005, 2010, 2015, 2020]:
+            df = HouseTypeCountCalculator(buffer_size, year).calculate()
+            df.to_csv(f"ho_gb_{buffer_size.value}_{year}.csv")
+
+            df = BusinessEmployeeCountCalculator(buffer_size, year).calculate()
+            df.to_csv(f"bem_{buffer_size.value}_{year}.csv")
+
+            df = BusinessRegistrationCountCalculator(buffer_size, year).calculate()
+            df.to_csv(f"bnu_{buffer_size.value}_{year}.csv")
