@@ -234,6 +234,60 @@ class EmissionCalculator(BorderAbstractCalculator):
             logger.error(f"Error in {self.__class__.__name__}: {e}")
             raise
 
+class CarRegistrationCalculator(BorderAbstractCalculator):
+    """Calculator for car registration number variable"""
+
+    def __init__(self, border_type: BorderType, year: int):
+        super().__init__(border_type, year)
+        
+    @property
+    def table_name(self) -> str:
+        return "car_registration"
+
+    @property
+    def label_prefix(self) -> str:
+        return "car_registration"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2000, 2005, 2010, 2015, 2020]
+    
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the car registration variable calculation within border.
+        # 해당 지리변수는 읍면동 단위의 원데이터가 없기 때문에 읍면동 단위 지리변수는 시군구의 값을 그대로 사용함
+        Returns:
+            DataFrame containing calculation results with river area variable
+        """
+        self.validate_year()
+        border_tbl = self.border_tbl
+        border_cd = self.border_cd_col
+
+        sql = text(
+            f"""
+            SELECT
+                b.{border_cd} AS border_id,
+                year,
+                value as sigungu_car_registration,
+                st_area(b.geom) as area,
+                st_area(b.geom) / value as area_per_car
+            FROM
+                {border_tbl} AS b
+            JOIN car_registration AS c
+                ON LEFT(b.{border_cd}::text, 5) = c.sgg_cd::text
+            WHERE c.year = {year}
+            ORDER BY {border_cd}
+            """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
 if __name__ == "__main__":
     print(engine)
     print(conn)
@@ -243,8 +297,11 @@ if __name__ == "__main__":
     #         print(border_type.value, year)
     #         df = RiverCalculator(border_type, year).calculate()
     #         print(df.sample(3))
+    # for border_type in BorderType:
+    #     for year in [2019, 2005, 2010, 2015, 2019]:
+    #         df = EmissionCalculator(border_type, year).calculate()
+    #         print(df.sample(3))
     for border_type in BorderType:
-        for year in [2019, 2005, 2010, 2015, 2019]:
-            df = EmissionCalculator(border_type, year).calculate()
+        for year in [2000, 2005, 2010, 2015, 2020]:
+            df = CarRegistrationCalculator(border_type, year).calculate()
             print(df.sample(3))
-        
