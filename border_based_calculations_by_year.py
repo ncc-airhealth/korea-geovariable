@@ -62,7 +62,7 @@ class BorderAbstractCalculator(ABC):
     @abstractmethod
     def calculate(self) -> pd.DataFrame:
         """
-        Execute the point-based calculation.
+        Execute the border-based calculation.
 
         Returns:
             DataFrame containing calculation results
@@ -104,16 +104,15 @@ class RiverCalculator(BorderAbstractCalculator):
     
     def calculate(self) -> pd.DataFrame:
         """
-        Execute the house type count calculation with buffer zones.
+        Execute the river area calculation within border.
 
         Returns:
-            DataFrame containing calculation results with house type count variables
+            DataFrame containing calculation results with river area variable
         """
         self.validate_year()
         border_tbl = self.border_tbl
         border_cd = self.border_cd_col
         border_nm = self.border_nm_col
-        table_name = self.table_name
 
         sql = text(
             f"""
@@ -139,12 +138,113 @@ class RiverCalculator(BorderAbstractCalculator):
             logger.error(f"Error in {self.__class__.__name__}: {e}")
             raise
 
+
+class EmissionCalculator(BorderAbstractCalculator):
+    """Calculator for emission variable"""
+
+    def __init__(self, border_type: BorderType, year: int):
+        super().__init__(border_type, year)
+        border_year_map = {2001: 2000, 2005: 2005, 2010: 2010, 2015:2015, 2019: 2020}
+        self.border_tbl = self.border_tbl.replace(f"{year}", f"{border_year_map[year]}") 
+
+    @property
+    def table_name(self) -> str:
+        return "emission"
+
+    @property
+    def label_prefix(self) -> str:
+        return "EM"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2001, 2005, 2010, 2015, 2019]
+    
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the emission within border.
+
+        Returns:
+            DataFrame containing calculation results with emission variables
+        """
+        self.validate_year()
+        border_tbl = self.border_tbl
+        border_cd = self.border_cd_col
+        year = self.year
+        label = self.label_prefix
+        matter_alias = {
+            "co": "CO", "nox": "NOx", "nh3": "NH3", "voc": "VOC", 
+            "pm10": "PM10", "sox": "SOx", "tsp": "TSP"
+        }
+
+        sql = text(
+            f"""
+            WITH tmp AS (
+                SELECT
+                    b.{border_cd},
+                    'emission_point' AS tablename,
+                    {",\n".join([f"COALESCE(SUM(ep.{m}),0) AS {m}" for m in matter_alias.keys()])}
+                FROM
+                    {border_tbl} AS b
+                LEFT JOIN "public".emission_point AS ep 
+                    ON st_contains(b.geom, ep.geometry)
+                    AND ep.year = {year}
+                GROUP BY
+                    b.{border_cd}
+                UNION
+                SELECT
+                    b.{border_cd},
+                    'emission_line' AS tablename,
+                    {",\n".join([f"COALESCE(SUM(el.{m}),0) AS {m}" for m in matter_alias.keys()])}
+                FROM
+                    {border_tbl} AS b
+                LEFT JOIN "public".emission_line AS el 
+                    ON st_contains(b.geom, el.geometry)
+                    AND el.year = {year}
+                GROUP BY
+                    b.{border_cd}
+                UNION
+                SELECT
+                    b.{border_cd},
+                    'emission_area' AS tablename,
+                    {",\n".join([f"COALESCE(SUM(ea.{m}),0) AS {m}" for m in matter_alias.keys()])}
+                FROM
+                    {border_tbl} AS b
+                LEFT JOIN "public".emission_area AS ea 
+                    ON st_contains(b.geom, ea.geometry)
+                    AND ea.year = {year}
+                GROUP BY
+                    b.{border_cd}
+            )
+            SELECT
+                {border_cd},
+                {",\n".join([f'sum({m}) AS "{label}_{M}_{year}"' for m, M in matter_alias.items()])}
+            FROM
+                tmp
+        GROUP BY
+            {border_cd}
+        ORDER BY
+            {border_cd};
+        """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
 if __name__ == "__main__":
     print(engine)
     print(conn)
 
+    # for border_type in BorderType:
+    #     for year in [2000, 2005, 2010, 2015, 2020]:
+    #         print(border_type.value, year)
+    #         df = RiverCalculator(border_type, year).calculate()
+    #         print(df.sample(3))
     for border_type in BorderType:
-        for year in [2000, 2005, 2010, 2015, 2020]:
-            print(border_type.value, year)
-            df = RiverCalculator(border_type, year).calculate()
+        for year in [2019, 2005, 2010, 2015, 2019]:
+            df = EmissionCalculator(border_type, year).calculate()
             print(df.sample(3))
+        
