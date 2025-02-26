@@ -229,20 +229,35 @@ import_raster() {
 
     # Try multiple regex patterns to extract pollutant type
 
-    # Pattern 1: emission.p.co.tif or emission.a.nh3.tif
+    # Pattern 1: emission.p.co.tif or emission.a.nh3.tif - simple case with no year
     if [[ $filename =~ emission\.[pla]\.([a-zA-Z0-9_]+)\.tif$ ]]; then
         pollutant_type="${BASH_REMATCH[1]}"
         echo "  Detected pollutant type (pattern 1): $pollutant_type from match: ${BASH_REMATCH[0]}"
 
-    # Pattern 2: emission.p.co_2001.tif
-    elif [[ $filename =~ emission\.[pla]\.([a-zA-Z0-9_]+)_[0-9]+\.tif$ ]]; then
-        pollutant_type="${BASH_REMATCH[1]}"
+    # Pattern 2: emission.p.2001_co.tif - year prefix in pollutant
+    elif [[ $filename =~ emission\.[pla]\.([0-9]{4})_([a-zA-Z0-9_]+)\.tif$ ]]; then
+        pollutant_type="${BASH_REMATCH[2]}"  # Use capture group 2 (the part after year_)
         echo "  Detected pollutant type (pattern 2): $pollutant_type from match: ${BASH_REMATCH[0]}"
+        echo "  (Removed year prefix ${BASH_REMATCH[1]} from pollutant)"
 
-    # Pattern 3: emission.p.co.other.tif
+    # Pattern 3: emission.p.2001_co_extra.tif - year prefix with extra parts
+    elif [[ $filename =~ emission\.[pla]\.([0-9]{4})_([a-zA-Z0-9_]+)_ ]]; then
+        pollutant_type="${BASH_REMATCH[2]}"  # Use capture group 2 (the part after year_)
+        echo "  Detected pollutant type (pattern 3): $pollutant_type from match: ${BASH_REMATCH[0]}"
+        echo "  (Removed year prefix ${BASH_REMATCH[1]} from pollutant)"
+
+    # Pattern 4: emission.p.co.other.tif - any other format
     elif [[ $filename =~ emission\.[pla]\.([a-zA-Z0-9_]+)\. ]]; then
         pollutant_type="${BASH_REMATCH[1]}"
-        echo "  Detected pollutant type (pattern 3): $pollutant_type from match: ${BASH_REMATCH[0]}"
+
+        # Check if pollutant has a year prefix (like 2001_voc)
+        if [[ $pollutant_type =~ ^([0-9]{4})_(.+)$ ]]; then
+            pollutant_type="${BASH_REMATCH[2]}"  # Extract just the part after year_
+            echo "  Detected pollutant type (pattern 4): $pollutant_type from match: ${BASH_REMATCH[0]}"
+            echo "  (Removed year prefix ${BASH_REMATCH[1]} from pollutant)"
+        else
+            echo "  Detected pollutant type (pattern 4): $pollutant_type from match: ${BASH_REMATCH[0]}"
+        fi
 
     else
         echo "WARNING: Could not determine pollutant type for $filename"
@@ -251,6 +266,12 @@ import_raster() {
         IFS='.' read -ra PARTS <<< "$filename"
         echo "  Filename parts: ${PARTS[@]}"
         pollutant_type="unknown"
+    fi
+
+    # Final cleanup - ensure the pollutant type doesn't contain year prefix
+    if [[ $pollutant_type =~ ^[0-9]{4}_(.+)$ ]]; then
+        echo "  Removing year prefix from pollutant type"
+        pollutant_type="${BASH_REMATCH[1]}"
     fi
 
     echo "Processing: Year=$year, Type=$emission_type, Pollutant=$pollutant_type, File=$filename"
