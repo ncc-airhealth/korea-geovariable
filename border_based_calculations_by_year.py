@@ -1,11 +1,13 @@
 import os
 from abc import ABC, abstractmethod
 from enum import Enum
+from functools import reduce
 
 import pandas as pd
 from dotenv import load_dotenv
 from dou import logger
 from sqlalchemy import create_engine, text
+from tqdm import tqdm
 
 load_dotenv()
 
@@ -288,6 +290,68 @@ class CarRegistrationCalculator(BorderAbstractCalculator):
             raise
 
 
+class LanduseAreaCalculator(BorderAbstractCalculator):
+    """Calculator for car registration landuse area/ratio variable"""
+
+    def __init__(self, border_type: BorderType, year: int):
+        super().__init__(border_type, year)
+        
+    @property
+    def table_name(self) -> str:
+        return "landuse"
+
+    @property
+    def label_prefix(self) -> str:
+        return "lu"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2000, 2005, 2010, 2015, 2020]
+    
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the landuse area/ratio variable calculation within border.
+        Returns:
+            DataFrame containing calculation results with river area variable
+        """
+        self.validate_year()
+        year = self.year
+        border_tbl = self.border_tbl
+        border_cd = self.border_cd_col
+        landuse_table = f"landuse_v002_{year}"
+        codes = [110, 120, 130, 140, 150, 160, 200, 310, 320, 330, 400, 500, 600, 710]
+        
+        df_list = []
+        for code in tqdm(codes, desc=f"({year}) landuse area/ratio calculation "):
+            area_col_name = f"lu_{code}_area"
+            ratio_col_name = f"lu_{code}_ratio"
+
+            sql = text(
+                f"""SELECT
+                    b.{border_cd} AS border_code,
+                    sum(ST_Area(ST_Intersection(l.geometry, b.geom))) AS {area_col_name},
+                    sum(ST_Area(ST_Intersection(l.geometry, b.geom))) / MAX(ST_Area(b.geom)) AS {ratio_col_name}
+                FROM
+                    {border_tbl} as b
+                    LEFT JOIN {landuse_table} as l ON ST_Intersects(l.geometry, b.geom)
+                GROUP BY
+                    b.{border_cd}
+                """
+            )
+            try:
+                result = conn.execute(sql)
+                rows = result.all()
+                df = pd.DataFrame([dict(row._mapping) for row in rows])
+                df_list.append(df)
+            except Exception as e:
+                logger.error(f"Error in {self.__class__.__name__}: {e}")
+                raise
+        
+
+        df_merged = reduce(lambda ldf, rdf: pd.merge(ldf, rdf, on='key_col', how='outer'), df_list)
+        return df_merged
+
+
 if __name__ == "__main__":
     print(engine)
     print(conn)
@@ -301,7 +365,13 @@ if __name__ == "__main__":
     #     for year in [2019, 2005, 2010, 2015, 2019]:
     #         df = EmissionCalculator(border_type, year).calculate()
     #         print(df.sample(3))
+    # for border_type in BorderType:
+    #     for year in [2000, 2005, 2010, 2015, 2020]:
+    #         df = CarRegistrationCalculator(border_type, year).calculate()
+    #         print(df.sample(3))
     for border_type in BorderType:
-        for year in [2000, 2005, 2010, 2015, 2020]:
-            df = CarRegistrationCalculator(border_type, year).calculate()
-            print(df.sample(3))
+        for year in [2000, 2010, 2020]:
+            df = LanduseAreaCalculator(border_type, year).calculate()
+            print(df.sample())
+    
+
