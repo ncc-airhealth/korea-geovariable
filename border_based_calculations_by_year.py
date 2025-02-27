@@ -318,6 +318,7 @@ class LanduseAreaCalculator(BorderAbstractCalculator):
         year = self.year
         border_tbl = self.border_tbl
         border_cd = self.border_cd_col
+        border_nm = self.border_nm_col
         landuse_table = f"landuse_v002_{year}"
         codes = [110, 120, 130, 140, 150, 160, 200, 310, 320, 330, 400, 500, 600, 710]
         
@@ -335,7 +336,8 @@ class LanduseAreaCalculator(BorderAbstractCalculator):
                     {border_tbl} as b
                     LEFT JOIN {landuse_table} as l ON ST_Intersects(l.geometry, b.geom)
                 GROUP BY
-                    b.{border_cd}
+                    b.{border_cd}, 
+                    b.{border_nm}
                 """
             )
             try:
