@@ -24,6 +24,14 @@ class BufferSize(Enum):
     VERY_LARGE = 5000
 
 
+class EmissionBufferSize(Enum):
+    """Valid buffer sizes in meters."""
+
+    SMALL = 3000
+    MEDIUM = 10000
+    LARGE = 20000
+
+
 def merge_dataframes_by_id(
     dataframes: list[pd.DataFrame], id_column: str = "id"
 ) -> pd.DataFrame:
@@ -807,6 +815,142 @@ class HouseTypeCountCalculator(PointAbstractCalculator):
             raise
 
 
+class EmissionVectorBasedCalculator(PointAbstractCalculator):
+    """Calculator for emission based on vector data."""
+
+    def __init__(self, buffer_size: EmissionBufferSize, year: int):
+        super().__init__(year)
+        self.buffer_size = buffer_size
+
+    @property
+    def table_name(self) -> list[str]:
+        return ["emission_point", "emission_line", "emission_area"]
+
+    @property
+    def label_prefix(self) -> str:
+        return "EM"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2010, 2015, 2019]
+
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the emission calculation.
+
+        Returns:
+            DataFrame containing calculation results with emission variables
+        """
+        self.validate_year()
+        buffer = self.buffer_size.value
+        emission_year = self.year
+        label_postfix = str(self.buffer_size.value).zfill(5)
+
+        sql = text(
+            f"""
+                WITH tmp AS (
+                    SELECT
+                        a.tot_reg_cd,
+                        'emission_area' AS tablename,
+                        COALESCE(SUM(b.co),
+                            0) AS co,
+                        COALESCE(SUM(b.nox),
+                            0) AS nox,
+                        COALESCE(SUM(b.nh3),
+                            0) AS nh3,
+                        COALESCE(SUM(b.voc),
+                            0) AS voc,
+                        COALESCE(SUM(b.pm10),
+                            0) AS pm10,
+                        COALESCE(SUM(b.sox),
+                            0) AS sox,
+                        COALESCE(SUM(b.tsp),
+                            0) AS tsp
+                    FROM
+                        "jgg_centroid_adjusted" AS a
+                    LEFT JOIN emission_point AS b ON ST_Contains(ST_Buffer(a.geom,
+                            {buffer}),
+                        b.geometry)
+                        AND b.year = {emission_year}
+                GROUP BY
+                    a.tot_reg_cd
+                UNION
+                SELECT
+                    a.tot_reg_cd,
+                    'emission_line' AS tablename,
+                    COALESCE(SUM(b.co),
+                        0) AS co,
+                    COALESCE(SUM(b.nox),
+                        0) AS nox,
+                    COALESCE(SUM(b.nh3),
+                        0) AS nh3,
+                    COALESCE(SUM(b.voc),
+                        0) AS voc,
+                    COALESCE(SUM(b.pm10),
+                        0) AS pm10,
+                    COALESCE(SUM(b.sox),
+                        0) AS sox,
+                    COALESCE(SUM(b.tsp),
+                        0) AS tsp
+                FROM
+                    "jgg_centroid_adjusted" AS a
+                LEFT JOIN emission_line AS b ON ST_Contains(ST_Buffer(a.geom,
+                        {buffer}),
+                    b.geometry)
+                        AND b.year = {emission_year}
+                GROUP BY
+                    a.tot_reg_cd
+                UNION
+                SELECT
+                    a.tot_reg_cd,
+                    'emission_point' AS tablename,
+                    COALESCE(SUM(b.co),
+                        0) AS co,
+                    COALESCE(SUM(b.nox),
+                        0) AS nox,
+                    COALESCE(SUM(b.nh3),
+                        0) AS nh3,
+                    COALESCE(SUM(b.voc),
+                        0) AS voc,
+                    COALESCE(SUM(b.pm10),
+                        0) AS pm10,
+                    COALESCE(SUM(b.sox),
+                        0) AS sox,
+                    COALESCE(SUM(b.tsp),
+                        0) AS tsp
+                FROM
+                    "jgg_centroid_adjusted" AS a
+                    LEFT JOIN emission_area AS b ON ST_Contains(ST_Buffer(a.geom,
+                            {buffer}),
+                        b.geometry)
+                        AND b.year = {emission_year}
+                GROUP BY
+                    a.tot_reg_cd
+                )
+                SELECT
+                    tmp.tot_reg_cd,
+                    sum(co) as "{self.label_prefix}_CO_{label_postfix}",
+                    sum(nox) as "{self.label_prefix}_NOx_{label_postfix}",
+                    sum(nh3) as "{self.label_prefix}_NH3_{label_postfix}",
+                    sum(voc) as "{self.label_prefix}_VOC_{label_postfix}",
+                    sum(pm10) as "{self.label_prefix}_PM10_{label_postfix}",
+                    sum(sox) as "{self.label_prefix}_SOx_{label_postfix}",
+                    sum(tsp) as "{self.label_prefix}_TSP_{label_postfix}"
+                FROM
+                    tmp
+                GROUP BY
+                    tot_reg_cd;
+                    """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
 # TODO: Emission
 # TODO: Traffic
 # TODO: Population
@@ -816,13 +960,7 @@ class HouseTypeCountCalculator(PointAbstractCalculator):
 
 
 if __name__ == "__main__":
-    for buffer_size in BufferSize:
-        for year in [2000, 2005, 2010, 2015, 2020]:
-            df = HouseTypeCountCalculator(buffer_size, year).calculate()
-            df.to_csv(f"ho_gb_{buffer_size.value}_{year}.csv")
-
-            df = BusinessEmployeeCountCalculator(buffer_size, year).calculate()
-            df.to_csv(f"bem_{buffer_size.value}_{year}.csv")
-
-            df = BusinessRegistrationCountCalculator(buffer_size, year).calculate()
-            df.to_csv(f"bnu_{buffer_size.value}_{year}.csv")
+    for buffer_size in EmissionBufferSize:
+        for year in [2010, 2015, 2019]:
+            df = EmissionVectorBasedCalculator(buffer_size, year).calculate()
+            df.to_csv(f"emission_{buffer_size.value}_{year}.csv")
