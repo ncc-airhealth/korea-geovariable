@@ -2,6 +2,7 @@ import os
 from abc import ABC, abstractmethod
 from enum import Enum
 from functools import reduce
+from datetime import datetime
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -10,6 +11,10 @@ from sqlalchemy import create_engine, text
 from tqdm import tqdm
 
 load_dotenv()
+
+def pdt(s):
+    print(f"{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}" + "="*60)
+    print(s)
 
 # Database connection setup
 engine = create_engine(os.getenv("DB_URL"))  # type: ignore
@@ -367,19 +372,22 @@ if __name__ == "__main__":
 
     for border_type in BorderType:
         for year in [2000, 2005, 2010, 2015, 2020]:
-            print(border_type.value, year)
+            pdt(f"{border_type.value} {year}")
             df = RiverCalculator(border_type, year).calculate()
             print(df.sample(3))
     # for border_type in BorderType:
     #     for year in [2019, 2005, 2010, 2015, 2019]:
+    #         pdt(f"{border_type.value} {year}")
     #         df = EmissionCalculator(border_type, year).calculate()
     #         print(df.sample(3))
     # for border_type in BorderType:
     #     for year in [2000, 2005, 2010, 2015, 2020]:
+    #         pdt(f"{border_type.value} {year}")
     #         df = CarRegistrationCalculator(border_type, year).calculate()
     #         print(df.sample(3))
     # for border_type in BorderType:
     #     for year in [2000, 2010, 2020]:
+    #         pdt(f"{border_type.value} {year}")
     #         df = LanduseAreaCalculator(border_type, year).calculate()
     #         print(df.sample())
     
