@@ -18,8 +18,10 @@ conn = engine.connect()
 
 class BorderType(Enum):
     """Valid border type"""
-    emd = "emd"
     sgg = "sgg"
+    emd = "emd"
+    jgg = "jgg"
+    
 
 
 class BorderAbstractCalculator(ABC):
@@ -34,14 +36,19 @@ class BorderAbstractCalculator(ABC):
         """
         self.border_type = border_type
         self.year = year
-        if border_type.value == "emd":
-            self.border_tbl = f"bnd_dong_00_{year}_4q"
-            self.border_cd_col  = f"adm_dr_cd"
-            self.border_nm_col = f"adm_dr_nm"
-        elif border_type.value == "sgg":
+        
+        if border_type.value == "sgg":
             self.border_tbl = f"bnd_sigungu_00_{year}_4q"
             self.border_cd_col  = f"sigungu_cd"
             self.border_nm_col = f"sigungu_nm"
+        elif border_type.value == "emd":
+            self.border_tbl = f"bnd_dong_00_{year}_4q"
+            self.border_cd_col  = f"adm_dr_cd"
+            self.border_nm_col = f"adm_dr_nm"
+        elif border_type.value == "jgg":
+            self.border_tbl = f"jgg_borders_2023"
+            self.border_cd_col  = f"tot_reg_cd"
+            self.border_nm_col = f"tot_reg_cd"
 
     @property
     @abstractmethod
@@ -119,15 +126,13 @@ class RiverCalculator(BorderAbstractCalculator):
         sql = text(
             f"""
                 SELECT
-                    b.{border_cd} AS border_cd,
-                    b.{border_nm} AS border_nm,
+                    b.{border_cd} AS {border_cd},
                     SUM(COALESCE(ST_Area(ST_Intersection(r.geometry, b.geom)), 0)) AS {self.label_prefix}
                 FROM
                     {border_tbl} AS b
                     LEFT JOIN river r ON ST_Intersects(b.geom, r.geometry)
                 GROUP BY
-                    b.{border_cd},
-                    b.{border_nm}
+                    b.{border_cd}
                 ORDER BY
                     b.{border_cd};
                 """
@@ -182,11 +187,11 @@ class EmissionCalculator(BorderAbstractCalculator):
             f"""
             WITH tmp AS (
                 SELECT
-                    b.{border_cd},
+                    b.{border_cd} AS {border_cd},
                     'emission_point' AS tablename,
                     {",\n".join([f"COALESCE(SUM(ep.{m}),0) AS {m}" for m in matter_alias.keys()])}
                 FROM
-                    {border_tbl} AS b
+                    {border_tbl} AS bhu9]\
                 LEFT JOIN "public".emission_point AS ep 
                     ON st_contains(b.geom, ep.geometry)
                     AND ep.year = {year}
@@ -268,7 +273,7 @@ class CarRegistrationCalculator(BorderAbstractCalculator):
         sql = text(
             f"""
             SELECT
-                b.{border_cd} AS border_id,
+                b.{border_cd} AS {border_cd},
                 year,
                 value as sigungu_car_registration,
                 st_area(b.geom) as area,
@@ -329,12 +334,14 @@ class LanduseAreaCalculator(BorderAbstractCalculator):
 
             sql = text(
                 f"""SELECT
-                    b.{border_cd} AS border_code,
+                    b.{border_cd} AS {border_cd},
+                    b.{border_nm} AS {border_nm},
                     sum(ST_Area(ST_Intersection(l.geometry, b.geom))) AS {area_col_name},
                     sum(ST_Area(ST_Intersection(l.geometry, b.geom))) / MAX(ST_Area(b.geom)) AS {ratio_col_name}
                 FROM
-                    {border_tbl} as b
-                    LEFT JOIN {landuse_table} as l ON ST_Intersects(l.geometry, b.geom)
+                    {border_tbl} AS b
+                    LEFT JOIN {landuse_table} AS l 
+                    ON ST_Intersects(l.geometry, b.geom)
                 GROUP BY
                     b.{border_cd}, 
                     b.{border_nm}
@@ -350,7 +357,7 @@ class LanduseAreaCalculator(BorderAbstractCalculator):
                 raise
         
 
-        df_merged = reduce(lambda ldf, rdf: pd.merge(ldf, rdf, on='key_col', how='outer'), df_list)
+        df_merged = reduce(lambda ldf, rdf: pd.merge(ldf, rdf, on=[border_cd, border_nm], how='outer'), df_list)
         return df_merged
 
 
@@ -358,11 +365,11 @@ if __name__ == "__main__":
     print(engine)
     print(conn)
 
-    # for border_type in BorderType:
-    #     for year in [2000, 2005, 2010, 2015, 2020]:
-    #         print(border_type.value, year)
-    #         df = RiverCalculator(border_type, year).calculate()
-    #         print(df.sample(3))
+    for border_type in BorderType:
+        for year in [2000, 2005, 2010, 2015, 2020]:
+            print(border_type.value, year)
+            df = RiverCalculator(border_type, year).calculate()
+            print(df.sample(3))
     # for border_type in BorderType:
     #     for year in [2019, 2005, 2010, 2015, 2019]:
     #         df = EmissionCalculator(border_type, year).calculate()
@@ -371,9 +378,9 @@ if __name__ == "__main__":
     #     for year in [2000, 2005, 2010, 2015, 2020]:
     #         df = CarRegistrationCalculator(border_type, year).calculate()
     #         print(df.sample(3))
-    for border_type in BorderType:
-        for year in [2000, 2010, 2020]:
-            df = LanduseAreaCalculator(border_type, year).calculate()
-            print(df.sample())
+    # for border_type in BorderType:
+    #     for year in [2000, 2010, 2020]:
+    #         df = LanduseAreaCalculator(border_type, year).calculate()
+    #         print(df.sample())
     
 
