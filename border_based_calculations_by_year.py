@@ -55,6 +55,7 @@ class BorderAbstractCalculator(ABC):
             self.border_cd_col  = f"tot_reg_cd"
             self.border_nm_col = f"tot_reg_cd"
 
+
     @property
     @abstractmethod
     def table_name(self) -> str:
@@ -196,7 +197,7 @@ class EmissionCalculator(BorderAbstractCalculator):
                     'emission_point' AS tablename,
                     {",\n".join([f"COALESCE(SUM(ep.{m}),0) AS {m}" for m in matter_alias.keys()])}
                 FROM
-                    {border_tbl} AS bhu9]\
+                    {border_tbl} AS b
                 LEFT JOIN "public".emission_point AS ep 
                     ON st_contains(b.geom, ep.geometry)
                     AND ep.year = {year}
@@ -274,6 +275,7 @@ class CarRegistrationCalculator(BorderAbstractCalculator):
         self.validate_year()
         border_tbl = self.border_tbl
         border_cd = self.border_cd_col
+        year = self.year
 
         sql = text(
             f"""
@@ -366,15 +368,65 @@ class LanduseAreaCalculator(BorderAbstractCalculator):
         return df_merged
 
 
+class CoastlineDistanceCalculator(BorderAbstractCalculator):
+    """Calculator for distance from coastline to border centroid variable"""
+
+    def __init__(self, border_type: BorderType, year: int):
+        super().__init__(border_type, year)
+        
+    @property
+    def table_name(self) -> str:
+        return "coastline"
+
+    @property
+    def label_prefix(self) -> str:
+        return "centroid_to_coastline"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2000, 2005, 2010, 2015, 2020]
+    
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the distance from coastline to border centroid.
+
+        Returns:
+            DataFrame containing calculation results with river area variable
+        """
+        self.validate_year()
+        border_tbl = self.border_tbl
+        border_cd = self.border_cd_col
+        year = self.year
+
+        sql = text(
+            f"""
+            SELECT
+                b.{border_cd} AS {border_cd},
+                ST_Distance(ST_Centroid(b.geom), ST_Transform(c.geom, 5179)) AS {self.label_prefix}
+            FROM
+                {border_tbl} AS b, 
+                {self.table_name}_{year} AS c
+            ORDER BY {border_cd}
+            """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
 if __name__ == "__main__":
     print(engine)
     print(conn)
 
-    for border_type in BorderType:
-        for year in [2000, 2005, 2010, 2015, 2020]:
-            pdt(f"{border_type.value} {year}")
-            df = RiverCalculator(border_type, year).calculate()
-            print(df.sample(3))
+    # for border_type in BorderType:
+    #     for year in [2000, 2005, 2010, 2015, 2020]:
+    #         pdt(f"{border_type.value} {year}")
+    #         df = RiverCalculator(border_type, year).calculate()
+    #         print(df.sample(3))
     # for border_type in BorderType:
     #     for year in [2019, 2005, 2010, 2015, 2019]:
     #         pdt(f"{border_type.value} {year}")
@@ -390,5 +442,10 @@ if __name__ == "__main__":
     #         pdt(f"{border_type.value} {year}")
     #         df = LanduseAreaCalculator(border_type, year).calculate()
     #         print(df.sample())
+    for border_type in BorderType:
+        for year in [2000, 2010, 2020]:
+            pdt(f"{border_type.value} {year}")
+            df = CoastlineDistanceCalculator(border_type, year).calculate()
+            print(df.sample(3))
     
 
