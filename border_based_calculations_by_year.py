@@ -10,6 +10,7 @@ from dou import logger
 from sqlalchemy import create_engine, text
 from tqdm import tqdm
 
+
 load_dotenv()
 
 def pdt(s):
@@ -322,7 +323,7 @@ class LanduseAreaCalculator(BorderAbstractCalculator):
     
     def calculate(self) -> pd.DataFrame:
         """
-        Execute the landuse area/ratio variable calculation within border.
+        Execute the landuse area/ratio variable calculation within border calculation.
         Returns:
             DataFrame containing calculation results with river area variable
         """
@@ -388,10 +389,10 @@ class CoastlineDistanceCalculator(BorderAbstractCalculator):
     
     def calculate(self) -> pd.DataFrame:
         """
-        Execute the distance from coastline to border centroid.
+        Execute the distance from coastline to border centroid calculation.
 
         Returns:
-            DataFrame containing calculation results with river area variable
+            DataFrame containing calculation results with distance variable
         """
         self.validate_year()
         border_tbl = self.border_tbl
@@ -407,6 +408,66 @@ class CoastlineDistanceCalculator(BorderAbstractCalculator):
                 {border_tbl} AS b, 
                 {self.table_name}_{year} AS c
             ORDER BY {border_cd}
+            """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
+class NdviCalculator(BorderAbstractCalculator):
+    """Calculator for NDVI variable"""
+
+    def __init__(self, border_type: BorderType, year: int):
+        super().__init__(border_type, year)
+        
+    @property
+    def table_name(self) -> str:
+        return "ndvi"
+
+    @property
+    def label_prefix(self) -> str:
+        return "ndvi"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2000, 2005, 2010, 2015, 2020]
+    
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the NDVI calculation.
+
+        Returns:
+            DataFrame containing calculation results with ndvi statistics in borders variable
+        """
+        self.validate_year()
+        border_tbl = self.border_tbl
+        border_cd = self.border_cd_col
+        year = self.year
+
+        sql = text(
+            f"""
+            WITH ndvi_merged AS (
+                SELECT
+                    b.{border_cd} AS {border_cd}
+                    , ST_Union(ST_Clip (n.rast, b.geom)) AS clipped_rast
+                FROM
+                    {border_tbl} AS b
+                    , {self.table_name} AS n
+                WHERE
+                    n.year = {year}
+                    AND ST_Intersects(n.rast, b.geom)
+                GROUP BY
+                    b.{border_cd}
+            )
+            SELECT
+                nm.{border_cd} AS {border_cd}
+                , ST_SummaryStats(nm.clipped_rast, 1, TRUE) AS stats
+            FROM ndvi_merged AS nm
             """
         )
         try:
@@ -438,14 +499,18 @@ if __name__ == "__main__":
     #         df = CarRegistrationCalculator(border_type, year).calculate()
     #         print(df.sample(3))
     # for border_type in BorderType:
-    #     for year in [2000, 2010, 2020]:
+    #     for year in [2000, 2005, 2010, 2015, 2020]:
     #         pdt(f"{border_type.value} {year}")
     #         df = LanduseAreaCalculator(border_type, year).calculate()
     #         print(df.sample())
+    # for border_type in BorderType:
+    #     for year in [2000, 2005, 2010, 2015, 2020]:
+    #         pdt(f"{border_type.value} {year}")
+    #         df = CoastlineDistanceCalculator(border_type, year).calculate()
+    #         print(df.sample(3))
     for border_type in BorderType:
-        for year in [2000, 2010, 2020]:
+        for year in [2000, 2005, 2010, 2015, 2020]:
             pdt(f"{border_type.value} {year}")
-            df = CoastlineDistanceCalculator(border_type, year).calculate()
-            print(df.sample(3))
-    
+            df = NdviCalculator(border_type, year).calculate()
+            print(df.sample(5))
 
