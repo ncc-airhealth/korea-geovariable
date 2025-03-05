@@ -448,6 +448,7 @@ class NdviCalculator(BorderAbstractCalculator):
         border_tbl = self.border_tbl
         border_cd = self.border_cd_col
         year = self.year
+        stat_types = ["count", "sum", "mean", "std", "min", "max"]
 
         sql = text(
             f"""
@@ -473,10 +474,21 @@ class NdviCalculator(BorderAbstractCalculator):
         try:
             result = conn.execute(sql)
             rows = result.all()
-            return pd.DataFrame([dict(row._mapping) for row in rows])
+            df = pd.DataFrame([dict(row._mapping) for row in rows])
+
+            str2tuple = lambda x: x[1:-1].split(',')
+            for sti, stat_type in enumerate(stat_types):
+               df[f"{self.label_prefix}_{stat_type}"] = df["stats"].apply(lambda x: str2tuple(x)[sti])
+            df = df.drop(["stats"], axis=1) 
+            return df
         except Exception as e:
             logger.error(f"Error in {self.__class__.__name__}: {e}")
             raise
+
+    # def stat2tuple(self, stat_str):
+    #     stat_str = stat_str[1:-1]
+    #     stat_str_split = stat_str.split(',')
+
 
 
 if __name__ == "__main__":
