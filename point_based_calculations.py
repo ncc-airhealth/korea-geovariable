@@ -1262,6 +1262,166 @@ class RoadLengthLaneWidthCalculator(PointAbstractCalculator):
             raise
 
 
+class AbstractMrLengthCalculator(PointAbstractCalculator):
+    def __init__(self, buffer_size: BufferSize, year: int):
+        super().__init__(year)
+        self.buffer_size = buffer_size
+
+    @property
+    def table_name(self):
+        return ""
+
+    @property
+    def label_prefix(self):
+        return f'"{self.table_name.upper()}_L_{str(self.buffer_size.value).zfill(4)}"'
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2000, 2005, 2010, 2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        sql = text(
+            f"""
+            SELECT
+                sb.tot_reg_cd, COALESCE(SUM(ST_Length(ST_Intersection(r.geometry, sb.geom_{self.buffer_size.value}))), 0) AS {self.label_prefix}
+            FROM
+                jgg_centroid_adjusted_buffered sb
+                LEFT JOIN (select * from {self.table_name} where year = {self.year}) r ON ST_Intersects(r.geometry, sb.geom_{self.buffer_size.value})
+            GROUP BY
+                sb.tot_reg_cd;
+                """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
+class Mr1LengthCalculator(AbstractMrLengthCalculator):
+    @property
+    def table_name(self) -> str:
+        return "mr1"
+
+
+class Mr2LengthCalculator(AbstractMrLengthCalculator):
+    @property
+    def table_name(self) -> str:
+        return "mr2"
+
+
+class AbstractMrLengthLaneCalculator(PointAbstractCalculator):
+    def __init__(self, buffer_size: BufferSize, year: int):
+        super().__init__(year)
+        self.buffer_size = buffer_size
+
+    @property
+    def table_name(self) -> str:
+        return ""
+
+    @property
+    def label_prefix(self) -> str:
+        return f'"{self.table_name.upper()}_LL_{str(self.buffer_size.value).zfill(4)}"'
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2000, 2005, 2010, 2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        sql = text(
+            f"""
+            WITH lls AS (
+            SELECT
+                sb.tot_reg_cd, COALESCE(SUM(ST_Length(ST_Intersection(r.geometry, sb.geom_{self.buffer_size.value}))*r.lanes), 0)  AS ll
+            FROM
+                jgg_centroid_adjusted_buffered sb
+                LEFT JOIN (select * from {self.table_name} join roads_{self.year} rd on rd.id = {self.table_name}.roads_{self.year}_id where year = {self.year}) r ON ST_Intersects(r.geometry, sb.geom_{self.buffer_size.value})
+            GROUP BY
+                sb.tot_reg_cd , r.lanes
+            )
+            SELECT tot_reg_cd, sum(ll) as {self.label_prefix}
+            FROM lls
+            GROUP BY tot_reg_cd;
+            """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
+class Mr1LengthLaneCalculator(AbstractMrLengthLaneCalculator):
+    @property
+    def table_name(self) -> str:
+        return "mr1"
+
+
+class Mr2LengthLaneCalculator(AbstractMrLengthLaneCalculator):
+    @property
+    def table_name(self) -> str:
+        return "mr2"
+
+
+class AbstractMrLengthLaneWidthCalculator(PointAbstractCalculator):
+    def __init__(self, buffer_size: BufferSize, year: int):
+        super().__init__(year)
+        self.buffer_size = buffer_size
+
+    @property
+    def table_name(self) -> str:
+        return ""
+
+    @property
+    def label_prefix(self) -> str:
+        return f'"{self.table_name.upper()}_LLW_{str(self.buffer_size.value).zfill(4)}"'
+
+    @staticmethod
+    def valid_years() -> list[int]:
+        return [2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        sql = text(
+            f"""
+            WITH llws AS (
+            SELECT
+                sb.tot_reg_cd, COALESCE(SUM(ST_Length(ST_Intersection(r.geometry, sb.geom_{self.buffer_size.value}))*r.lanes*r.width), 0)  AS llw
+            FROM
+                jgg_centroid_adjusted_buffered sb
+                LEFT JOIN (select * from {self.table_name} join roads_{self.year} rd on rd.id = {self.table_name}.roads_{self.year}_id where year = {self.year}) r ON ST_Intersects(r.geometry, sb.geom_{self.buffer_size.value})
+            GROUP BY
+                sb.tot_reg_cd , r.lanes
+            )
+            SELECT tot_reg_cd, sum(llw) as {self.label_prefix}
+            FROM llws
+            GROUP BY tot_reg_cd;
+            """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
+class Mr1LengthLaneWidthCalculator(AbstractMrLengthLaneWidthCalculator):
+    @property
+    def table_name(self) -> str:
+        return "mr1"
+
+
+class Mr2LengthLaneWidthCalculator(AbstractMrLengthLaneWidthCalculator):
+    @property
+    def table_name(self) -> str:
+        return "mr2"
+
+
 # TODO: Population
 # TODO: NDVI
 # TODO: Landuse
@@ -1270,8 +1430,8 @@ class RoadLengthLaneWidthCalculator(PointAbstractCalculator):
 
 if __name__ == "__main__":
     for buffer_size in BufferSize:
-        for year in RoadLengthLaneWidthCalculator.valid_years():
-            df = RoadLengthLaneWidthCalculator(buffer_size, year).calculate()
-            df.to_csv(f"road_length_lane_width_{buffer_size.value}_{year}.csv")
+        for year in Mr2LengthLaneWidthCalculator.valid_years():
+            df = Mr2LengthLaneWidthCalculator(buffer_size, year).calculate()
+            df.to_csv(f"mr2_length_lane_width_{buffer_size.value}_{year}.csv")
             break
         break
