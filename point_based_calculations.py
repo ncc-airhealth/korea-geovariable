@@ -1422,7 +1422,49 @@ class Mr2LengthLaneWidthCalculator(AbstractMrLengthLaneWidthCalculator):
         return "mr2"
 
 
-# TODO: Population
+class PopulationCalculator(PointAbstractCalculator):
+    def __init__(self, buffer_size: BufferSize, year: int):
+        super().__init__(year)
+        self.buffer_size = buffer_size
+
+    @property
+    def table_name(self) -> str:
+        return "jgg_adjusted_sgis_pop"
+
+    @property
+    def label_prefix(self) -> str:
+        return "POP_"
+
+    @staticmethod
+    def valid_years() -> list[int]:
+        return [2000, 2005, 2010, 2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        sql = text(
+            f"""SELECT
+            ia.center_reg_cd as tot_reg_cd,
+            COALESCE(SUM(p.pop::float * ia.intersect_area / ia.border_area), 0) AS {f'"{self.label_prefix}{str(self.buffer_size.value).zfill(4)}"'},
+            COALESCE(SUM(p.pop_m::float * ia.intersect_area / ia.border_area), 0) AS {f'"{self.label_prefix}M_{str(self.buffer_size.value).zfill(4)}"'},
+            COALESCE(SUM(p.pop_f::float * ia.intersect_area / ia.border_area), 0) AS {f'"{self.label_prefix}F_{str(self.buffer_size.value).zfill(4)}"'}
+            FROM
+                intersection_areas_{self.buffer_size.value} ia
+            LEFT JOIN
+                jgg_adjusted_sgis_pop p ON p.tot_reg_cd = ia.border_reg_cd AND p.year = {self.year}
+            GROUP BY
+                ia.center_reg_cd
+            ORDER BY
+                ia.center_reg_cd;
+            """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
 # TODO: NDVI
 # TODO: Landuse
 # TODO: Relative DEM, DSM
@@ -1430,8 +1472,8 @@ class Mr2LengthLaneWidthCalculator(AbstractMrLengthLaneWidthCalculator):
 
 if __name__ == "__main__":
     for buffer_size in BufferSize:
-        for year in Mr2LengthLaneWidthCalculator.valid_years():
-            df = Mr2LengthLaneWidthCalculator(buffer_size, year).calculate()
-            df.to_csv(f"mr2_length_lane_width_{buffer_size.value}_{year}.csv")
+        for year in PopulationCalculator.valid_years():
+            df = PopulationCalculator(buffer_size, year).calculate()
+            df.to_csv(f"population_{buffer_size.value}_{year}.csv")
             break
         break
