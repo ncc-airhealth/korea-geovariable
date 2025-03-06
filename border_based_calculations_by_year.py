@@ -553,43 +553,64 @@ class AirportDistanceCalculator(BorderAbstractCalculator):
             raise
 
 
+# test DB connection
 if __name__ == "__main__":
-    print(engine)
-    print(conn)
+    pdt(engine)
+    pdt(conn)
 
-    # for border_type in BorderType:
-    #     for year in [2000, 2005, 2010, 2015, 2020]:
-    #         pdt(f"{border_type.value} {year}")
-    #         df = RiverCalculator(border_type, year).calculate()
-    #         print(df.sample(3))
-    # for border_type in BorderType:
-    #     for year in [2019, 2005, 2010, 2015, 2019]:
-    #         pdt(f"{border_type.value} {year}")
-    #         df = EmissionCalculator(border_type, year).calculate()
-    #         print(df.sample(3))
-    # for border_type in BorderType:
-    #     for year in [2000, 2005, 2010, 2015, 2020]:
-    #         pdt(f"{border_type.value} {year}")
-    #         df = CarRegistrationCalculator(border_type, year).calculate()
-    #         print(df.sample(3))
-    # for border_type in BorderType:
-    #     for year in [2000, 2005, 2010, 2015, 2020]:
-    #         pdt(f"{border_type.value} {year}")
-    #         df = LanduseAreaCalculator(border_type, year).calculate()
-    #         print(df.sample())
-    # for border_type in BorderType:
-    #     for year in [2000, 2005, 2010, 2015, 2020]:
-    #         pdt(f"{border_type.value} {year}")
-    #         df = CoastlineDistanceCalculator(border_type, year).calculate()
-    #         print(df.sample(3))
-    # for border_type in BorderType:
-    #     for year in [2000, 2005, 2010, 2015, 2020]:
-    #         pdt(f"{border_type.value} {year}")
-    #         df = NdviCalculator(border_type, year).calculate()
-    #         print(df.sample(5))
-    for border_type in BorderType:
-        for year in [2000, 2005, 2010, 2015, 2020]:
-            pdt(f"{border_type.value} {year}")
-            df = AirportDistanceCalculator(border_type, year).calculate()
-            print(df.sample(3))
+# test river variable calculator
+# if __name__ == "__main__":
+#     for border_type in BorderType:
+#         for year in [2000, 2005, 2010, 2015, 2020]:
+#             pdt(f"{border_type.value} {year}")
+#             df = RiverCalculator(border_type, year).calculate()
+#             print(df.sample(3))
+
+# test Emission variable calculator
+# if __name__ == "__main__":
+#     for border_type in BorderType:
+#         for year in [2019, 2005, 2010, 2015, 2019]:
+#             pdt(f"{border_type.value} {year}")
+#             df = EmissionCalculator(border_type, year).calculate()
+#             print(df.sample(3))
+
+# test Car registration number variable calculator
+# if __name__ == "__main__":
+#     for border_type in BorderType:
+#         for year in [2000, 2005, 2010, 2015, 2020]:
+#             pdt(f"{border_type.value} {year}")
+#             df = CarRegistrationCalculator(border_type, year).calculate()
+#             print(df.sample(3))
+
+# test landuse area&ratio variable calculator
+# if __name__ == "__main__":
+#     for border_type in BorderType:
+#         for year in [2000, 2005, 2010, 2015, 2020]:
+#             pdt(f"{border_type.value} {year}")
+#             df = LanduseAreaCalculator(border_type, year).calculate()
+#             print(df.sample())
+
+# test Minumum distance to coastline variable calculator
+# if __name__ == "__main__":
+#     for border_type in BorderType:
+#         for year in [2000, 2005, 2010, 2015, 2020]:
+#             pdt(f"{border_type.value} {year}")
+#             df = CoastlineDistanceCalculator(border_type, year).calculate()
+#             print(df.sample(3))
+
+# test NDVI statistics variable calculator
+# if __name__ == "__main__":
+#     for border_type in BorderType:
+#         for year in [2000, 2005, 2010, 2015, 2020]:
+#             pdt(f"{border_type.value} {year}")
+#             df = NdviCalculator(border_type, year).calculate()
+#             print(df.sample(3))
+
+# test Minumum distance airport variable calculator
+# if __name__ == "__main__":
+#     for border_type in BorderType:
+#         for year in [2000, 2005, 2010, 2015, 2020]:
+#             pdt(f"{border_type.value} {year}")
+#             df = AirportDistanceCalculator(border_type, year).calculate()
+#             print(df.sample(3))
 
