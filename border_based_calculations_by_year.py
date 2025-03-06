@@ -14,7 +14,7 @@ from tqdm import tqdm
 load_dotenv()
 
 def pdt(s):
-    print(f"{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}" + "="*60)
+    print(f"\n{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}" + "="*60)
     print(s)
 
 # Database connection setup
@@ -513,6 +513,7 @@ class AirportDistanceCalculator(BorderAbstractCalculator):
         self.validate_year()
         border_tbl = self.border_tbl
         border_cd = self.border_cd_col
+        border_nm = self.border_nm_col
         year = self.year
 
         sql = text(
@@ -530,9 +531,9 @@ class AirportDistanceCalculator(BorderAbstractCalculator):
             ), airport_distance_rank_tbl AS (
                 -- calculate distance rank (minimum is 1)
                 SELECT 
-                *
-                    ,  RANK() OVER (PARTITION BY {border_cd} ORDER BY airport_distance DESC) AS distance_rank
-                FROM airport_distance_tbl
+                    *
+                    ,  RANK() OVER (PARTITION BY ad.{border_cd} ORDER BY airport_distance ASC) AS distance_rank
+                FROM airport_distance_tbl AS ad
             )
             -- select minimum distance airport
             SELECT 
@@ -590,6 +591,5 @@ if __name__ == "__main__":
         for year in [2000, 2005, 2010, 2015, 2020]:
             pdt(f"{border_type.value} {year}")
             df = AirportDistanceCalculator(border_type, year).calculate()
-            print(df.sample(5))
-            break
+            print(df.sample(3))
 
