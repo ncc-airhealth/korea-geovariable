@@ -951,7 +951,193 @@ class EmissionVectorBasedCalculator(PointAbstractCalculator):
             raise
 
 
-# TODO: Emission
+class EmissionRasterValueCalculator(PointAbstractCalculator):
+    # TODO: data is corrupted
+    """Calculator for emission raster values."""
+
+    def __init__(self, buffer_size: EmissionBufferSize, year: int):
+        """
+        Initialize calculator with buffer size and year.
+
+        Args:
+            year: Reference year for the calculation
+            emission_type: Type of emission (area, line, point)
+            pollutant_type: Type of pollutant (co, nox, nh3, voc, pm10, sox, tsp)
+        """
+        super().__init__(year)
+        self.buffer_size = buffer_size
+        self.emission_type = emission_type.lower()
+        self.pollutant_type = pollutant_type.lower()
+
+    @property
+    def table_name(self) -> str:
+        return "emission_raster"
+
+    @property
+    def label_prefix(self) -> str:
+        return "EM"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2001, 2005, 2010]  # Example valid years, adjust as needed
+
+    def validate_emission_type(self) -> None:
+        """
+        Validate if the emission type is valid.
+
+        Raises:
+            ValueError: If the emission type is invalid
+        """
+        valid_emission_types = ["area", "line", "point"]
+        if self.emission_type not in valid_emission_types:
+            valid_types_str = ", ".join(valid_emission_types)
+            raise ValueError(
+                f"Invalid emission type '{self.emission_type}'. Valid types are: {valid_types_str}"
+            )
+
+    def validate_pollutant_type(self) -> None:
+        """
+        Validate if the pollutant type is valid.
+
+        Raises:
+            ValueError: If the pollutant type is invalid
+        """
+        valid_pollutant_types = ["co", "nox", "nh3", "voc", "pm10", "sox", "tsp"]
+        if self.pollutant_type not in valid_pollutant_types:
+            valid_types_str = ", ".join(valid_pollutant_types)
+            raise ValueError(
+                f"Invalid pollutant type '{self.pollutant_type}'. Valid types are: {valid_types_str}"
+            )
+
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the emission raster value calculation.
+
+        Returns:
+            DataFrame containing calculation results with emission raster values
+        """
+        self.validate_year()
+        self.validate_emission_type()
+        self.validate_pollutant_type()
+
+        column_name = f"{self.label_prefix}_{self.emission_type}_{self.pollutant_type}_{self.year}"
+
+        sql = text(
+            f"""
+            SELECT src.tot_reg_cd,
+                   ST_Value(dst.rast, 1, src.geom) AS "{column_name}"
+            FROM jgg_centroid_adjusted AS src,
+                 {self.table_name} AS dst
+            WHERE ST_Intersects(src.geom, dst.rast)
+              AND dst.year = {self.year}
+              AND dst.emission_type = '{self.emission_type}'
+              AND dst.pollutant_type = '{self.pollutant_type}'
+            ORDER BY src.tot_reg_cd;
+
+                WITH tmp AS (
+                    SELECT
+                        a.tot_reg_cd,
+                        'emission_area' AS tablename,
+                        COALESCE(SUM(b.co),
+                            0) AS co,
+                        COALESCE(SUM(b.nox),
+                            0) AS nox,
+                        COALESCE(SUM(b.nh3),
+                            0) AS nh3,
+                        COALESCE(SUM(b.voc),
+                            0) AS voc,
+                        COALESCE(SUM(b.pm10),
+                            0) AS pm10,
+                        COALESCE(SUM(b.sox),
+                            0) AS sox,
+                        COALESCE(SUM(b.tsp),
+                            0) AS tsp
+                    FROM
+                        "jgg_centroid_adjusted" AS a
+                    LEFT JOIN emission_point AS b ON ST_Contains(ST_Buffer(a.geom,
+                            {buffer}),
+                        b.geometry)
+                        AND b.year = {emission_year}
+                GROUP BY
+                    a.tot_reg_cd
+                UNION
+                SELECT
+                    a.tot_reg_cd,
+                    'emission_line' AS tablename,
+                    COALESCE(SUM(b.co),
+                        0) AS co,
+                    COALESCE(SUM(b.nox),
+                        0) AS nox,
+                    COALESCE(SUM(b.nh3),
+                        0) AS nh3,
+                    COALESCE(SUM(b.voc),
+                        0) AS voc,
+                    COALESCE(SUM(b.pm10),
+                        0) AS pm10,
+                    COALESCE(SUM(b.sox),
+                        0) AS sox,
+                    COALESCE(SUM(b.tsp),
+                        0) AS tsp
+                FROM
+                    "jgg_centroid_adjusted" AS a
+                LEFT JOIN emission_line AS b ON ST_Contains(ST_Buffer(a.geom,
+                        {buffer}),
+                    b.geometry)
+                        AND b.year = {emission_year}
+                GROUP BY
+                    a.tot_reg_cd
+                UNION
+                SELECT
+                    a.tot_reg_cd,
+                    'emission_point' AS tablename,
+                    COALESCE(SUM(b.co),
+                        0) AS co,
+                    COALESCE(SUM(b.nox),
+                        0) AS nox,
+                    COALESCE(SUM(b.nh3),
+                        0) AS nh3,
+                    COALESCE(SUM(b.voc),
+                        0) AS voc,
+                    COALESCE(SUM(b.pm10),
+                        0) AS pm10,
+                    COALESCE(SUM(b.sox),
+                        0) AS sox,
+                    COALESCE(SUM(b.tsp),
+                        0) AS tsp
+                FROM
+                    "jgg_centroid_adjusted" AS a
+                    LEFT JOIN emission_area AS b ON ST_Contains(ST_Buffer(a.geom,
+                            {buffer}),
+                        b.geometry)
+                        AND b.year = {emission_year}
+                GROUP BY
+                    a.tot_reg_cd
+                )
+                SELECT
+                    tmp.tot_reg_cd,
+                    sum(co) as "{self.label_prefix}_CO_{label_postfix}",
+                    sum(nox) as "{self.label_prefix}_NOx_{label_postfix}",
+                    sum(nh3) as "{self.label_prefix}_NH3_{label_postfix}",
+                    sum(voc) as "{self.label_prefix}_VOC_{label_postfix}",
+                    sum(pm10) as "{self.label_prefix}_PM10_{label_postfix}",
+                    sum(sox) as "{self.label_prefix}_SOx_{label_postfix}",
+                    sum(tsp) as "{self.label_prefix}_TSP_{label_postfix}"
+                FROM
+                    tmp
+                GROUP BY
+                    tot_reg_cd;
+            """
+        )
+
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
 # TODO: Traffic
 # TODO: Population
 # TODO: NDVI
