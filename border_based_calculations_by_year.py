@@ -128,7 +128,6 @@ class RiverCalculator(BorderAbstractCalculator):
         self.validate_year()
         border_tbl = self.border_tbl
         border_cd = self.border_cd_col
-        border_nm = self.border_nm_col
 
         sql = text(
             f"""
@@ -331,7 +330,6 @@ class LanduseAreaCalculator(BorderAbstractCalculator):
         year = self.year
         border_tbl = self.border_tbl
         border_cd = self.border_cd_col
-        border_nm = self.border_nm_col
         landuse_table = f"landuse_v002_{year}"
         codes = [110, 120, 130, 140, 150, 160, 200, 310, 320, 330, 400, 500, 600, 710]
         
@@ -343,7 +341,6 @@ class LanduseAreaCalculator(BorderAbstractCalculator):
             sql = text(
                 f"""SELECT
                     b.{border_cd} AS {border_cd},
-                    b.{border_nm} AS {border_nm},
                     sum(ST_Area(ST_Intersection(l.geometry, b.geom))) AS {area_col_name},
                     sum(ST_Area(ST_Intersection(l.geometry, b.geom))) / MAX(ST_Area(b.geom)) AS {ratio_col_name}
                 FROM
@@ -352,7 +349,6 @@ class LanduseAreaCalculator(BorderAbstractCalculator):
                     ON ST_Intersects(l.geometry, b.geom)
                 GROUP BY
                     b.{border_cd}, 
-                    b.{border_nm}
                 """
             )
             try:
@@ -513,7 +509,6 @@ class AirportDistanceCalculator(BorderAbstractCalculator):
         self.validate_year()
         border_tbl = self.border_tbl
         border_cd = self.border_cd_col
-        border_nm = self.border_nm_col
         year = self.year
 
         sql = text(
