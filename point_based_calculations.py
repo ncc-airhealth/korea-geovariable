@@ -1,6 +1,7 @@
 import os
 from abc import ABC, abstractmethod
 from enum import Enum
+from typing import Literal
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -20,6 +21,13 @@ class BufferSize(Enum):
     VERY_SMALL = 100
     SMALL = 300
     MEDIUM = 500
+    LARGE = 1000
+    VERY_LARGE = 5000
+
+
+class NdviBufferSize(Enum):
+    """Valid buffer sizes in meters."""
+
     LARGE = 1000
     VERY_LARGE = 5000
 
@@ -1465,15 +1473,113 @@ class PopulationCalculator(PointAbstractCalculator):
             raise
 
 
-# TODO: NDVI
-# TODO: Landuse
-# TODO: Relative DEM, DSM
+class AbstractNdviStatisticCalculator(PointAbstractCalculator):
+    def __init__(self, buffer_size: BufferSize, year: int):
+        super().__init__(year)
+        self.buffer_size = buffer_size
+
+    @property
+    def table_name(self) -> str:
+        return "ndvi_statistics"
+
+    @property
+    def label_prefix(self) -> str:
+        if self.statistic_type == "median":
+            return "NDVI_Y1_MM_"
+        else:
+            return "NDVI_Y1_"
+
+    @property
+    def statistic_type(self) -> Literal["mean", "median", "min", "max", "8mdn"]:
+        return "mean"
+
+    @staticmethod
+    def valid_years() -> list[int]:
+        return [2000, 2005, 2010, 2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        if self.statistic_type != "median":
+            sql = text(
+                f"""
+                SELECT
+                    ms.tot_reg_cd,
+                    COALESCE(st_value(ns.rast, 1, ms.geom), 0) as {self.label_prefix}{self.statistic_type}_{str(self.buffer_size.value).zfill(4)}
+                FROM
+                    "public"."jgg_centroid_adjusted" ms
+                LEFT JOIN
+                    "public".ndvi_statistics ns
+                ON
+                    ST_Intersects(ns.rast, ms.geom)
+                AND
+                    ns."year" = {self.year}
+                AND
+                    ns.statistic = '{self.statistic_type}'
+                """
+            )
+        else:
+            sql = text(
+                f"""
+                SELECT
+                    ms.tot_reg_cd,
+                    COALESCE(AVG((ST_SummaryStats(ST_Clip(ns.rast, ST_Buffer(ms.geom, {self.buffer_size.value})))).mean), 0) AS {self.label_prefix}{self.statistic_type}_{str(self.buffer_size.value).zfill(4)}
+                FROM
+                    "public"."jgg_centroid_adjusted" ms
+                LEFT JOIN
+                    "public".ndvi_statistics ns
+                ON
+                    ST_Intersects(ns.rast, ST_Buffer(ms.geom, {self.buffer_size.value}))
+                AND
+                    ns."year" = {self.year}
+                AND
+                    ns.statistic = 'median'
+                GROUP BY
+                    ms.tot_reg_cd, ms.geom;
+                """
+            )
+
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
+class NdviStatisticMeanCalculator(AbstractNdviStatisticCalculator):
+    @property
+    def statistic_type(self) -> Literal["mean", "median", "min", "max", "8mdn"]:
+        return "mean"
+
+
+class NdviStatisticMedianCalculator(AbstractNdviStatisticCalculator):
+    @property
+    def statistic_type(self) -> Literal["mean", "median", "min", "max", "8mdn"]:
+        return "median"
+
+
+class NdviStatisticMinCalculator(AbstractNdviStatisticCalculator):
+    @property
+    def statistic_type(self) -> Literal["mean", "median", "min", "max", "8mdn"]:
+        return "min"
+
+
+class NdviStatisticMaxCalculator(AbstractNdviStatisticCalculator):
+    @property
+    def statistic_type(self) -> Literal["mean", "median", "min", "max", "8mdn"]:
+        return "max"
+
+
+class NdviStatistic8mdnCalculator(AbstractNdviStatisticCalculator):
+    @property
+    def statistic_type(self) -> Literal["mean", "median", "min", "max", "8mdn"]:
+        return "8mdn"
 
 
 if __name__ == "__main__":
     for buffer_size in BufferSize:
-        for year in PopulationCalculator.valid_years():
-            df = PopulationCalculator(buffer_size, year).calculate()
-            df.to_csv(f"population_{buffer_size.value}_{year}.csv")
+        for year in NdviStatisticMedianCalculator.valid_years():
+            df = NdviStatisticMedianCalculator(buffer_size, year).calculate()
+            df.to_csv(f"ndvi_statistic_median_{buffer_size.value}_{year}.csv")
             break
         break
