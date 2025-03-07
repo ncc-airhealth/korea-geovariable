@@ -527,7 +527,7 @@ class AirportDistanceCalculator(BorderAbstractCalculator):
                 -- calculate distance rank (minimum is 1)
                 SELECT 
                     *
-                    ,  RANK() OVER (PARTITION BY ad.{border_cd} ORDER BY airport_distance ASC) AS distance_rank
+                    ,  ROW_NUMBER() OVER (PARTITION BY ad.{border_cd} ORDER BY airport_distance ASC) AS distance_rank
                 FROM airport_distance_tbl AS ad
             )
             -- select minimum distance airport
@@ -602,10 +602,10 @@ if __name__ == "__main__":
 #             print(df.sample(3))
 
 # test Minumum distance airport variable calculator
-# if __name__ == "__main__":
-#     for border_type in BorderType:
-#         for year in [2000, 2005, 2010, 2015, 2020]:
-#             pdt(f"{border_type.value} {year}")
-#             df = AirportDistanceCalculator(border_type, year).calculate()
-#             print(df.sample(3))
+if __name__ == "__main__":
+    for border_type in BorderType:
+        for year in [2000, 2005, 2010, 2015, 2020]:
+            pdt(f"{border_type.value} {year}")
+            df = AirportDistanceCalculator(border_type, year).calculate()
+            print(df.sample(3))
 
