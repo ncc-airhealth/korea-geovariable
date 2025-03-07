@@ -511,34 +511,6 @@ class AirportDistanceCalculator(BorderAbstractCalculator):
         border_cd = self.border_cd_col
         year = self.year
 
-        # sql = text(
-        #     f"""
-        #     WITH airport_distance_tbl AS (
-        #         -- calculate distance between border centroid & airport 
-        #         SELECT
-        #             b.{border_cd} AS {border_cd}
-        #             , a.name AS airport_name
-        #             , ST_Distance(ST_Centroid(b.geom), a.geometry) AS airport_distance
-        #         FROM
-        #             {border_tbl} AS b
-        #             CROSS JOIN airport AS a
-        #         WHERE a.year = {year}
-        #     ), airport_distance_rank_tbl AS (
-        #         -- calculate distance rank (minimum is 1)
-        #         SELECT 
-        #             *
-        #             ,  ROW_NUMBER() OVER (PARTITION BY ad.{border_cd} ORDER BY airport_distance ASC) AS distance_rank
-        #         FROM airport_distance_tbl AS ad
-        #     )
-        #     -- select minimum distance airport
-        #     SELECT 
-        #         {border_cd}
-        #         , airport_name
-        #         , airport_distance AS {self.label_prefix}
-        #     FROM airport_distance_rank_tbl
-        #     WHERE distance_rank = 1
-        #     """
-        # )
         sql = text(
             f"""
             WITH airport_distance_tbl AS (
@@ -632,6 +604,74 @@ class MilitaryDemarcationLineDistanceCalculator(BorderAbstractCalculator):
             raise
 
 
+class PortDistanceCalculator(BorderAbstractCalculator):
+    """Calculator for distance from port to border centroid variable"""
+
+    def __init__(self, border_type: BorderType, year: int):
+        super().__init__(border_type, year)
+        
+    @property
+    def table_name(self) -> str:
+        return "ports"
+
+    @property
+    def label_prefix(self) -> str:
+        return "port"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2000, 2005, 2010, 2015, 2020]
+    
+    def calculate(self) -> pd.DataFrame:
+        
+        """
+        Execute the distance from port to border centroid calculation.
+
+        Returns:
+            DataFrame containing calculation results with distance variable
+        """
+        self.validate_year()
+        border_tbl = self.border_tbl
+        border_cd = self.border_cd_col
+        year = self.year
+
+        sql = text(
+            f"""
+            WITH port_distance_tbl AS (
+                -- calculate distance between border centroid & port 
+                SELECT
+                    b.{border_cd} AS {border_cd}
+                    , p.alias AS {self.label_prefix}_alias
+                    , ST_Distance(ST_Centroid(b.geom), p.geometry) AS port_distance
+                FROM
+                    {border_tbl} AS b
+                    CROSS JOIN {self.table_name} AS p
+                WHERE p.year = {year}
+            ), port_distance_rank_tbl AS (
+                -- calculate distance rank (minimum is 1)
+                SELECT 
+                    *
+                    ,  ROW_NUMBER() OVER (PARTITION BY pd.{border_cd} ORDER BY {self.label_prefix}_distance ASC) AS distance_rank
+                FROM port_distance_tbl AS pd
+            )
+            -- select minimum distance port
+            SELECT 
+                {border_cd}
+                , {self.label_prefix}_alias
+                , {self.label_prefix}_distance
+            FROM port_distance_rank_tbl
+            WHERE distance_rank = 1
+            """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
 # test DB connection
 # if __name__ == "__main__":
 #     pdt(engine)
@@ -693,11 +733,19 @@ class MilitaryDemarcationLineDistanceCalculator(BorderAbstractCalculator):
 #             df = AirportDistanceCalculator(border_type, year).calculate()
 #             print(df.sample(3))
 
-# test Minumum distance airport variable calculator
+# test Minumum distance mdl variable calculator
+# if __name__ == "__main__":
+#     for border_type in BorderType:
+#         for year in [2000, 2005, 2010, 2015, 2020]:
+#             pdt(f"{border_type.value} {year}")
+#             df = MilitaryDemarcationLineDistanceCalculator(border_type, year).calculate()
+#             print(df.sample(3))
+
+# test Minumum distance port variable calculator
 if __name__ == "__main__":
     for border_type in BorderType:
         for year in [2000, 2005, 2010, 2015, 2020]:
             pdt(f"{border_type.value} {year}")
-            df = MilitaryDemarcationLineDistanceCalculator(border_type, year).calculate()
+            df = PortDistanceCalculator(border_type, year).calculate()
             print(df.sample(3))
 
