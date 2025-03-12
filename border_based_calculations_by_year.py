@@ -706,7 +706,7 @@ class RailCalculator(BorderAbstractCalculator):
                 WITH rail_1year AS ( SELECT * FROM {self.table_name} WHERE year = {year} )
                 SELECT
                     b.{border_cd} AS {border_cd},
-                    SUM( COALESCE(ST_Length(ST_Intersection(r.geometry, b.geom)), 0) ) AS {self.label_prefix}_length
+                    COALESCE(SUM( (ST_Length(ST_Intersection(r.geometry, b.geom)) ), 0) AS {self.label_prefix}_length
                 FROM
                     {border_tbl} AS b
                     LEFT JOIN rail_1year r ON ST_Intersects(b.geom, r.geometry)
