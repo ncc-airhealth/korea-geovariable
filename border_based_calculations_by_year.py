@@ -672,6 +672,58 @@ class PortDistanceCalculator(BorderAbstractCalculator):
             raise
 
 
+class RailCalculator(BorderAbstractCalculator):
+    """Calculator for intersecting rail variable"""
+
+    def __init__(self, border_type: BorderType, year: int):
+        super().__init__(border_type, year)
+
+    @property
+    def table_name(self) -> str:
+        return "rails"
+
+    @property
+    def label_prefix(self) -> str:
+        return "rail"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2000, 2005, 2010, 2015, 2020]
+    
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the rail length calculation within border.
+
+        Returns:
+            DataFrame containing calculation results with rail length variable
+        """
+        self.validate_year()
+        border_tbl = self.border_tbl
+        border_cd = self.border_cd_col
+        year = self.year
+        sql = text(
+            f"""
+                WITH rail_1year AS ( SELECT * FROM {self.table_name} WHERE year = {year} )
+                SELECT
+                    b.{border_cd} AS {border_cd},
+                    SUM( COALESCE(ST_Length(ST_Intersection(r.geometry, b.geom)), 0) ) AS {self.label_prefix}_length
+                FROM
+                    {border_tbl} AS b
+                    LEFT JOIN rail_1year r ON ST_Intersects(b.geom, r.geometry)
+                GROUP BY
+                    b.{border_cd}
+                ORDER BY
+                    b.{border_cd};
+                """
+            )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
 # test DB connection
 # if __name__ == "__main__":
 #     pdt(engine)
@@ -742,10 +794,18 @@ class PortDistanceCalculator(BorderAbstractCalculator):
 #             print(df.sample(3))
 
 # test Minumum distance port variable calculator
+# if __name__ == "__main__":
+#     for border_type in BorderType:
+#         for year in [2000, 2005, 2010, 2015, 2020]:
+#             pdt(f"{border_type.value} {year}")
+#             df = PortDistanceCalculator(border_type, year).calculate()
+#             print(df.sample(3))
+
+# test Intersecting rail length variable calculator
 if __name__ == "__main__":
     for border_type in BorderType:
         for year in [2000, 2005, 2010, 2015, 2020]:
             pdt(f"{border_type.value} {year}")
-            df = PortDistanceCalculator(border_type, year).calculate()
-            print(df.sample(3))
+            df = RailCalculator(border_type, year).calculate()
+            print(df.sample(5))
 
