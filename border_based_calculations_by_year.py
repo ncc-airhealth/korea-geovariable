@@ -4,6 +4,7 @@ from enum import Enum
 from functools import reduce
 from datetime import datetime
 
+import geopandas as gpd
 import pandas as pd
 from dotenv import load_dotenv
 from dou import logger
@@ -743,7 +744,7 @@ class RoadCalculator(BorderAbstractCalculator):
     def valid_years(self) -> list[int]:
         return [2000, 2005, 2010, 2015, 2020]
     
-    def calculate(self) -> pd.DataFrame:
+    def calculate(self, verbose=False) -> pd.DataFrame:
         """
         Execute the road length calculation within border.
 
@@ -754,25 +755,50 @@ class RoadCalculator(BorderAbstractCalculator):
         border_tbl = self.border_tbl
         border_cd = self.border_cd_col
         year = self.year
-        sql = text(
-            f"""
-                WITH road_1year AS ( SELECT * FROM {self.table_name} WHERE year = {year} )
-                SELECT
-                    b.{border_cd} AS {border_cd},
-                    COALESCE(SUM( ST_Length(ST_Intersection(r.geometry, b.geom))), 0) AS {self.label_prefix}_length
-                FROM
-                    {border_tbl} AS b
-                    LEFT JOIN road_1year r ON ST_Intersects(b.geom, r.geometry)
-                GROUP BY
-                    b.{border_cd}
-                ORDER BY
-                    b.{border_cd};
-                """
-            )
+        # sql = text(
+        #     f"""
+        #         WITH road_1year AS ( SELECT * FROM {self.table_name} WHERE year = {year} )
+        #         SELECT
+        #             b.{border_cd} AS {border_cd},
+        #             COALESCE(SUM( ST_Length(ST_Intersection(r.geometry, b.geom))), 0) AS {self.label_prefix}_length
+        #         FROM
+        #             {border_tbl} AS b
+        #             LEFT JOIN road_1year r ON ST_Intersects(b.geom, r.geometry)
+        #         GROUP BY
+        #             b.{border_cd}
+        #         ORDER BY
+        #             b.{border_cd};
+        #         """
+        #     )
         try:
-            result = conn.execute(sql)
-            rows = result.all()
-            return pd.DataFrame([dict(row._mapping) for row in rows])
+            result = conn.execute(text(f"SELECT {border_cd} FROM {border_tbl}"))
+            border_id_df = pd.DataFrame([dict(row._mapping) for row in result.all()])
+            row_dict_list = []
+            for _, border_sr in tqdm(border_id_df.iterrows(), total=len(border_id_df), disable=not verbose):
+                sel_border_cd = int(border_sr[border_cd])
+                # print(type(sel_border_cd), sel_border_cd)
+                sql = text(
+                    f"""
+                        WITH 
+                            road_1year AS ( SELECT * FROM {self.table_name} WHERE year = {year} )
+                            , border_sel AS ( SELECT * FROM {border_tbl} WHERE CAST({border_cd} AS INTEGER) = {sel_border_cd} ) 
+                        SELECT
+                            bs.{border_cd} AS {border_cd}
+                            , COALESCE(SUM( ST_Length(ST_Intersection(r.geometry, bs.geom))), 0) AS {self.label_prefix}_length
+                        FROM
+                            border_sel AS bs
+                            LEFT JOIN road_1year r ON ST_Intersects(bs.geom, r.geometry)
+                        GROUP BY
+                            bs.{border_cd}
+                    """
+                )
+                result = conn.execute(sql)
+                row_dict_list = row_dict_list + [dict(row._mapping) for row in result.all()]
+
+            return pd.DataFrame(row_dict_list)
+            # result = conn.execute(sql)
+            # rows = result.all()
+            # return pd.DataFrame([dict(row._mapping) for row in rows])
         except Exception as e:
             logger.error(f"Error in {self.__class__.__name__}: {e}")
             raise
@@ -868,5 +894,5 @@ if __name__ == "__main__":
     for border_type in BorderType:
         for year in [2005, 2010, 2015, 2020]:
             pdt(f"{border_type.value} {year}")
-            df = RoadCalculator(border_type, year).calculate()
+            df = RoadCalculator(border_type, year).calculate(verbose=True)
             print(df.sample(5))
