@@ -755,21 +755,7 @@ class RoadCalculator(BorderAbstractCalculator):
         border_tbl = self.border_tbl
         border_cd = self.border_cd_col
         year = self.year
-        # sql = text(
-        #     f"""
-        #         WITH road_1year AS ( SELECT * FROM {self.table_name} WHERE year = {year} )
-        #         SELECT
-        #             b.{border_cd} AS {border_cd},
-        #             COALESCE(SUM( ST_Length(ST_Intersection(r.geometry, b.geom))), 0) AS {self.label_prefix}_length
-        #         FROM
-        #             {border_tbl} AS b
-        #             LEFT JOIN road_1year r ON ST_Intersects(b.geom, r.geometry)
-        #         GROUP BY
-        #             b.{border_cd}
-        #         ORDER BY
-        #             b.{border_cd};
-        #         """
-        #     )
+
         try:
             result = conn.execute(text(f"SELECT {border_cd} FROM {border_tbl}"))
             border_id_df = pd.DataFrame([dict(row._mapping) for row in result.all()])
@@ -781,7 +767,7 @@ class RoadCalculator(BorderAbstractCalculator):
                     f"""
                         WITH 
                             road_1year AS ( SELECT * FROM {self.table_name} WHERE year = {year} )
-                            , border_sel AS ( SELECT * FROM {border_tbl} WHERE CAST({border_cd} AS INTEGER) = {sel_border_cd} ) 
+                            , border_sel AS ( SELECT * FROM {border_tbl} WHERE CAST({border_cd} AS BIGINT) = {sel_border_cd} ) 
                         SELECT
                             bs.{border_cd} AS {border_cd}
                             , COALESCE(SUM( ST_Length(ST_Intersection(r.geometry, bs.geom))), 0) AS {self.label_prefix}_length
@@ -796,9 +782,7 @@ class RoadCalculator(BorderAbstractCalculator):
                 row_dict_list = row_dict_list + [dict(row._mapping) for row in result.all()]
 
             return pd.DataFrame(row_dict_list)
-            # result = conn.execute(sql)
-            # rows = result.all()
-            # return pd.DataFrame([dict(row._mapping) for row in rows])
+
         except Exception as e:
             logger.error(f"Error in {self.__class__.__name__}: {e}")
             raise
@@ -890,6 +874,9 @@ class RoadCalculator(BorderAbstractCalculator):
 #             print(df.sample(5))
 
 # test Intersecting road length variable calculator
+# sigungu   about 17m
+# emd       about 13m (faster than sigungu, maybe caused by memory caching)
+# jgg       mor than 24 hours expected. if needed, gonna change the logic.
 if __name__ == "__main__":
     for border_type in BorderType:
         for year in [2005, 2010, 2015, 2020]:
