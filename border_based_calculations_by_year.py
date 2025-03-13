@@ -788,6 +788,82 @@ class RoadCalculator(BorderAbstractCalculator):
             raise
 
 
+class TopographicModelCalculator(BorderAbstractCalculator):
+    """Calculator for topographic model(dem/dsm) variable"""
+
+    def __init__(self, border_type: BorderType, year: int):
+        super().__init__(border_type, year)
+
+    @property
+    def table_name(self) -> str:
+        return "topo"
+
+    @property
+    def label_prefix(self) -> str:
+        return "topo"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2000, 2005, 2010, 2015, 2020]
+    
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the dem/dsm calculation.
+
+        Returns:
+            DataFrame containing calculation results with dsm statistics in borders variable
+        """
+        self.validate_year()
+        border_tbl = self.border_tbl
+        border_cd = self.border_cd_col
+        year = self.year
+        stat_types = ["count", "sum", "mean", "std", "min", "max"]
+        topo_types = ["dem", "dsm"]
+        
+        sql_dict = {
+            topo_type: text(
+                f"""
+                WITH {topo_type}_merged AS (
+                    SELECT
+                        b.{border_cd} AS {border_cd}
+                        , ST_Union(ST_Clip (t.rast, b.geom)) AS clipped_rast
+                    FROM
+                        {border_tbl} AS b
+                        , {topo_type} AS t
+                    WHERE
+                        ST_Intersects(t.rast, b.geom)
+                    GROUP BY
+                        b.{border_cd}
+                )
+                SELECT
+                    {border_cd}
+                    , ST_SummaryStats(clipped_rast, 1, TRUE) AS stats
+                FROM 
+                    {topo_type}_merged
+                """
+            )
+            for topo_type in topo_types
+        }
+        try:
+            topo_df_dict = {}
+            for topo_type, sql in sql_dict.items():
+                result = conn.execute(sql)
+                rows = result.all()
+                df = pd.DataFrame([dict(row._mapping) for row in rows])
+                str2tuple = lambda x: x[1:-1].split(',')
+                for sti, stat_type in enumerate(stat_types):
+                    df[f"{topo_type}_{stat_type}"] = df["stats"].apply(lambda x: str2tuple(x)[sti])
+                df = df.drop(["stats"], axis=1) 
+                topo_df_dict[topo_type] = df
+            
+            df = pd.merge(topo_df_dict[topo_types[0]], topo_df_dict[topo_types[1]], on=[border_cd], how='outer')
+            return df
+        
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
 # test DB connection
 # if __name__ == "__main__":
 #     pdt(engine)
@@ -877,9 +953,24 @@ class RoadCalculator(BorderAbstractCalculator):
 # sigungu   about 17m
 # emd       about 13m (faster than sigungu, maybe caused by memory caching)
 # jgg       mor than 24 hours expected. if needed, gonna change the logic.
+# if __name__ == "__main__":
+#     for border_type in BorderType:
+#         for year in [2005, 2010, 2015, 2020]:
+#             pdt(f"{border_type.value} {year}")
+#             df = RoadCalculator(border_type, year).calculate(verbose=True)
+#             print(df.sample(5))
+
+# test topo statistics variable calculator
+# sigungu   about 6m
+# emd       about 2m
+# jgg       about 7m
 if __name__ == "__main__":
     for border_type in BorderType:
-        for year in [2005, 2010, 2015, 2020]:
+        for year in [2000, 2005, 2010, 2015, 2020]:
             pdt(f"{border_type.value} {year}")
-            df = RoadCalculator(border_type, year).calculate(verbose=True)
+            df = TopographicModelCalculator(border_type, year).calculate()
+            print(df.shape)
             print(df.sample(5))
+
+
+
