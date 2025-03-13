@@ -1576,10 +1576,42 @@ class NdviStatistic8mdnCalculator(AbstractNdviStatisticCalculator):
         return "8mdn"
 
 
+class JggCentroidRelativeDemDsmCalculator:
+    """Calculator for relative DEM/DSM statistics using donut approach.
+
+    This is a precomputed table in the database.
+
+    To learn more about the donut approach, you can view the files in the `scripts` folder.
+
+    This was precomputed because it takes a long time to compute the statistics for each point.
+    """
+
+    def __init__(
+        self,
+        table_type: Literal["dem", "dsm"],
+        inner_buffer: Literal[1000, 5000],
+    ):
+        self.table_type = table_type
+        self.inner_buffer = inner_buffer
+
+    def calculate(self) -> pd.DataFrame:
+        sql = text(
+            f"""
+            SELECT * FROM jgg_centroid_relative_{self.table_type}_{self.inner_buffer}_donut
+            """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
 if __name__ == "__main__":
-    for buffer_size in BufferSize:
-        for year in NdviStatisticMedianCalculator.valid_years():
-            df = NdviStatisticMedianCalculator(buffer_size, year).calculate()
-            df.to_csv(f"ndvi_statistic_median_{buffer_size.value}_{year}.csv")
-            break
-        break
+    calculator = JggCentroidRelativeDemDsmCalculator(
+        table_type="dsm", inner_buffer=1000
+    )
+    df = calculator.calculate()
+    print(df)
