@@ -7,6 +7,7 @@ import pandas as pd
 from dotenv import load_dotenv
 from dou import logger
 from sqlalchemy import create_engine, text
+from tqdm import tqdm
 
 load_dotenv()
 
@@ -1088,9 +1089,9 @@ class EmissionRasterValueCalculator(PointAbstractCalculator):
                         0) AS tsp
                 FROM
                     "jgg_centroid_adjusted" AS a
-                LEFT JOIN emission_line AS b ON ST_Contains(ST_Buffer(a.geom,
-                        {buffer}),
-                    b.geometry)
+                    LEFT JOIN emission_line AS b ON ST_Contains(ST_Buffer(a.geom,
+                            {buffer}),
+                        b.geometry)
                         AND b.year = {emission_year}
                 GROUP BY
                     a.tot_reg_cd
@@ -1609,9 +1610,102 @@ class JggCentroidRelativeDemDsmCalculator:
             raise
 
 
+class LanduseCalculator(PointAbstractCalculator):
+    def __init__(self, buffer_size: BufferSize, year: int):
+        super().__init__(year)
+        self.buffer_size = buffer_size
+
+    @property
+    def table_name(self) -> str:
+        """Returns the appropriate table name based on the year."""
+        if self.year == 2020:
+            return "landuse_v004_2020_simplified"
+        else:
+            return f"landuse_v002_{self.year}"
+
+    @property
+    def label_prefix(self) -> str:
+        return "LS"
+
+    @property
+    def valid_years(self) -> list[int]:
+        """Return list of valid years for landuse data."""
+        return [2000, 2005, 2010, 2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the landuse calculation based on buffer zones.
+
+        This calculates the ratio of each landuse type's area within the buffer to the
+        total buffer area for all specified landuse codes. Uses a loop with tqdm for
+        progress tracking.
+
+        Returns:
+            DataFrame containing calculation results with landuse variables
+        """
+
+        self.validate_year()
+        buffer_value = self.buffer_size.value
+
+        # List of landuse codes to process
+        codes = [110, 120, 130, 140, 150, 160, 200, 310, 320, 330, 400, 500, 600, 710]
+
+        # Get the list of all jgg centroids first
+        sql = text("SELECT tot_reg_cd FROM jgg_centroid_adjusted ORDER BY tot_reg_cd")
+        try:
+            result = conn.execute(sql)
+            tot_reg_cd_rows = result.all()
+        except Exception as e:
+            logger.error(f"Error fetching tot_reg_cd in {self.__class__.__name__}: {e}")
+            raise
+
+        # Process each code separately with progress tracking
+        all_dataframes = []
+
+        for code in tqdm(codes, desc="Processing landuse codes"):
+            varname = f"{self.label_prefix}{code}_{str(buffer_value).zfill(4)}"
+
+            sql = text(
+                f"""
+                SELECT
+                    a_buffered.tot_reg_cd,
+                    COALESCE(
+                        SUM(
+                            ST_Area(ST_Intersection(a_buffered.geom_{buffer_value}, b.geometry))
+                        ) / ({buffer_value * buffer_value * 3.14159265358979323846}),
+                        0
+                    ) AS "{varname}"
+                FROM
+                    jgg_centroid_adjusted_buffered AS a_buffered
+                LEFT JOIN
+                    "{self.table_name}" AS b
+                ON
+                    ST_Intersects(a_buffered.geom_{buffer_value}, b.geometry)
+                    AND b.code = {code}
+                GROUP BY
+                    a_buffered.tot_reg_cd
+                ORDER BY
+                    a_buffered.tot_reg_cd;
+                """
+            )
+
+            try:
+                result = conn.execute(sql)
+                rows = result.all()
+                df = pd.DataFrame([dict(row._mapping) for row in rows])
+                all_dataframes.append(df)
+            except Exception as e:
+                logger.error(f"Error in {self.__class__.__name__} for code {code}: {e}")
+                raise
+
+        # Merge all dataframes into one
+        if all_dataframes:
+            return merge_dataframes_by_id(all_dataframes, id_column="tot_reg_cd")
+        else:
+            return pd.DataFrame()
+
+
 if __name__ == "__main__":
-    calculator = JggCentroidRelativeDemDsmCalculator(
-        table_type="dsm", inner_buffer=1000
-    )
+    calculator = LanduseCalculator(buffer_size=BufferSize.VERY_SMALL, year=2010)
     df = calculator.calculate()
     print(df)
