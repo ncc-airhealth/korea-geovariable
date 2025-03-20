@@ -877,11 +877,11 @@ class RasterEmissionCalculator(BorderAbstractCalculator):
 
     @property
     def table_name(self) -> str:
-        return "r_emission"
+        return "emission_raster"
 
     @property
     def label_prefix(self) -> str:
-        return "EM"
+        return "r_emission"
 
     @property
     def valid_years(self) -> list[int]:
@@ -908,7 +908,7 @@ class RasterEmissionCalculator(BorderAbstractCalculator):
             f"""
             WITH tmp1 AS (
                 SELECT *
-                FROM emission_raster AS e
+                FROM {self.table_name} AS e
                 WHERE
                     e.year = '{year}'
                     AND e.alias = '{matter}'
@@ -929,7 +929,7 @@ class RasterEmissionCalculator(BorderAbstractCalculator):
             )
             SELECT
                 b.{border_cd} AS {border_cd}
-                , ( ST_SummaryStats(ST_Clip(es.rast, b.geom), 1) ).sum AS {self.table_name}_{matter}
+                , ( ST_SummaryStats(ST_Clip(es.rast, b.geom), 1) ).sum AS {label}_{matter}
             FROM
                 {border_tbl} AS b
                 , emission_sum AS es
@@ -1063,6 +1063,9 @@ class RasterEmissionCalculator(BorderAbstractCalculator):
 #             print(df.sample(5))
 
 # test raster emission statistics variable calculator
+# sigungu   about 6m
+# emd       about 2m
+# jgg       about 7m
 if __name__ == "__main__":
     for border_type in BorderType:
         for year in [2010, 2015, 2019]:
