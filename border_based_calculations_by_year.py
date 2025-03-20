@@ -331,6 +331,7 @@ class LanduseAreaCalculator(BorderAbstractCalculator):
         year = self.year
         border_tbl = self.border_tbl
         border_cd = self.border_cd_col
+        border_nm = self.border_nm_col
         landuse_table = f"landuse_v002_{year}"
         codes = [110, 120, 130, 140, 150, 160, 200, 310, 320, 330, 400, 500, 600, 710]
         
@@ -755,6 +756,8 @@ class RoadCalculator(BorderAbstractCalculator):
         border_tbl = self.border_tbl
         border_cd = self.border_cd_col
         year = self.year
+        if year == 2000:
+            year = 2005
 
         try:
             result = conn.execute(text(f"SELECT {border_cd} FROM {border_tbl}"))
@@ -864,6 +867,93 @@ class TopographicModelCalculator(BorderAbstractCalculator):
             raise
 
 
+class RasterEmissionCalculator(BorderAbstractCalculator):
+    """Calculator for raster emission variable"""
+
+    def __init__(self, border_type: BorderType, year: int):
+        super().__init__(border_type, year)
+        border_year_map = {2001: 2000, 2005: 2005, 2010: 2010, 2015:2015, 2019: 2020}
+        self.border_tbl = self.border_tbl.replace(f"{year}", f"{border_year_map[year]}") 
+
+    @property
+    def table_name(self) -> str:
+        return "r_emission"
+
+    @property
+    def label_prefix(self) -> str:
+        return "EM"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2001, 2005, 2010, 2015, 2019]
+    
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the raster emission calculator within border.
+
+        Returns:
+            DataFrame containing calculation results with raster emission variables
+        """
+        self.validate_year()
+        border_tbl = self.border_tbl
+        border_cd = self.border_cd_col
+        year = self.year
+        label = self.label_prefix
+        matter_alias = {
+            "co": "CO", "nox": "NOx", "nh3": "NH3", "voc": "VOC", 
+            "pm10": "PM10", "sox": "SOx", "tsp": "TSP"
+        }
+
+        sql = lambda matter: text(
+            f"""
+            WITH tmp1 AS (
+                SELECT *
+                FROM emission_raster AS e
+                WHERE
+                    e.year = '{year}'
+                    AND e.alias = '{matter}'
+            ), tmp2 AS (
+                SELECT ST_MapAlgebra(rp, 1, rl, 1, '[rast1] + [rast2]', '32BF'::text) AS rast
+                FROM (
+                    SELECT
+                        (SELECT rast FROM tmp1 WHERE geom_type = 'point') AS rp, 
+                        (SELECT rast FROM tmp1 WHERE geom_type = 'line') AS rl
+                )
+            ), emission_sum AS (
+                SELECT ST_MapAlgebra(rpl, 1, ra, 1, '[rast1] + [rast2]', '32BF'::text) AS rast
+                FROM (
+                    SELECT
+                        (SELECT rast FROM tmp2) AS rpl, 
+                        (SELECT rast FROM tmp1 WHERE geom_type = 'area') AS ra
+                )
+            )
+            SELECT
+                b.{border_cd} AS {border_cd}
+                , ( ST_SummaryStats(ST_Clip(es.rast, b.geom), 1) ).sum AS {self.table_name}_{matter}
+            FROM
+                {border_tbl} AS b
+                , emission_sum AS es
+            WHERE 
+                ST_Intersects(es.rast, b.geom)
+            ;
+            """
+        )
+        
+        try:
+            df_list = []
+            for matter in matter_alias.keys():
+                result = conn.execute(sql(matter))
+                rows = result.all()
+                df_list.append(pd.DataFrame([dict(row._mapping) for row in rows]))
+
+            df_merged = reduce(lambda ldf, rdf: pd.merge(ldf, rdf, on=[border_cd], how='outer'), df_list)
+            return df_merged
+        
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
 # test DB connection
 # if __name__ == "__main__":
 #     pdt(engine)
@@ -964,11 +1054,20 @@ class TopographicModelCalculator(BorderAbstractCalculator):
 # sigungu   about 6m
 # emd       about 2m
 # jgg       about 7m
+# if __name__ == "__main__":
+#     for border_type in BorderType:
+#         for year in [2000, 2005, 2010, 2015, 2020]:
+#             pdt(f"{border_type.value} {year}")
+#             df = TopographicModelCalculator(border_type, year).calculate()
+#             print(df.shape)
+#             print(df.sample(5))
+
+# test raster emission statistics variable calculator
 if __name__ == "__main__":
     for border_type in BorderType:
-        for year in [2000, 2005, 2010, 2015, 2020]:
+        for year in [2010, 2015, 2019]:
             pdt(f"{border_type.value} {year}")
-            df = TopographicModelCalculator(border_type, year).calculate()
+            df = RasterEmissionCalculator(border_type, year).calculate()
             print(df.shape)
             print(df.sample(5))
 
