@@ -272,7 +272,9 @@ Add changes to `CHANGELOG.md`:
 
 - Open an issue for bugs or feature requests
 - Join discussions in GitHub Discussions
-- Contact maintainers at dongook.son@gmail.com
+- Contact maintainers
+   - [Han Jimin - 한지민](mailto:hangm0101@ncc.re.kr)
+   - [Son Dongook - 손동욱](mailto:d@dou.so)
 
 ## Next Steps
 

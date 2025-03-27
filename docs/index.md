@@ -16,7 +16,9 @@ All data has been reviewed and refined by the National Cancer Center's Fine Dust
 
 1. **Prerequisites**
    - Python 3.11 or 3.12
-   - Database account (contact dongook.son@gmail.com)
+   - Database account(Contact Maintainers)
+      - [Han Jimin - 한지민](mailto:hangm0101@ncc.re.kr)
+      - [Son Dongook - 손동욱](mailto:d@dou.so)
    - `uv` package manager
 
 2. **Installation**
