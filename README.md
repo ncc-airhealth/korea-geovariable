@@ -1,22 +1,149 @@
 # Korea Geovariable
 
-## Objective
+A Python library for calculating geospatial variables for Korean urban areas.
 
-- 특정 좌표에 대한 시간에 따른 공간적인 데이터를 연산하기 위한 툴입니다.
-- 이를 지리변수라고 부르며 Eum et al 에서 규정한 지리변수 대부분을 지원합니다.
-- 코호트의 건강정보와 지리변수를 결합하여 공간의 특성과 건강의 상관관계에 대한 연구를 시작할 수 있습니다.
-- 데이터는 공공데이터포털, KTDB, 등 여러기관에서 공개하는 정보를 국립암센터 미세먼지 연구팀이 리뷰하고 정제하여 PostGIS 데이터베이스에 적재하였습니다.
-- 이 코드베이스에는 지리변수를 연산하는 쿼리와 더불어, rawdata를 정제하고 DB 에 dump 하는 코드까지 섞여있을 수 있으니, 번잡하더라도 양해부탁드립니다.
+## Overview
 
-## Setup
+Korea Geovariable is a comprehensive library for calculating various geospatial variables for Korean urban areas. It provides a set of calculators for analyzing population, business, housing, environmental, and accessibility characteristics within buffer zones.
 
-- Python 3.11, 3.12 버전이 필요합니다.
-- `uv` 로 의존성 관리를 하고 있습니다.
-- 관리자(dongook.son@gmail.com)로부터 DB 계정에 대한 정보를 받으셔야합니다.
+## Features
 
-- 처음 리파지토리를 다운로드받고 실행하기 위해서 다음 명령어를 참조하십시오.
+- Point-based calculations with various buffer sizes
+- Support for multiple data sources:
+  - Administrative boundaries
+  - Census tracts
+  - Points of interest
+  - Road network
+  - Population data
+  - Business data
+  - Housing data
+  - Environmental data
+- Efficient spatial analysis using PostGIS
+- Comprehensive documentation
+- Extensive test coverage
+
+## Installation
+
+### Prerequisites
+
+- Python 3.11 or later
+- PostgreSQL 14 or later with PostGIS extension
+- `uv` package manager
+
+### Quick Start
 
 ```bash
+# Clone repository
+git clone https://github.com/ncc-airhealth/korea-geovariable
 cd korea-geovariable
+
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Unix/macOS
+# or
+.venv\Scripts\activate  # On Windows
+
+# Install dependencies
 uv sync
+
+# Set up environment variables
+cp .env.template .env
+# Edit .env with your configuration
 ```
+
+### Database Setup
+
+> **Note**: To obtain the database URL, please contact the system administrators:
+>
+> - [Han Jimin - 한지민](mailto:hangm0101@ncc.re.kr)
+> - [Son Dongook - 손동욱](mailto:d@dou.so)
+
+## Usage
+
+### Basic Example
+
+```python
+from point_based_calculations import PopulationCalculator, BufferSize
+
+# Create calculator
+calculator = PopulationCalculator(
+    buffer_size=BufferSize.MEDIUM,
+    year=2020
+)
+
+# Calculate population statistics
+results = calculator.calculate()
+
+# Print results
+print(results)
+```
+
+### Advanced Example
+
+```python
+from point_based_calculations import (
+    PopulationCalculator,
+    BusinessCalculator,
+    RoadLengthCalculator,
+    BufferSize
+)
+
+# Create calculators
+calculators = [
+    PopulationCalculator(BufferSize.MEDIUM, 2020),
+    BusinessCalculator(BufferSize.MEDIUM, 2020),
+    RoadLengthCalculator(BufferSize.MEDIUM)
+]
+
+# Calculate multiple variables
+results = {}
+for calculator in calculators:
+    results[calculator.__class__.__name__] = calculator.calculate()
+
+# Combine results
+combined_results = pd.concat(results.values(), axis=1)
+```
+
+## Documentation
+
+- [Installation Guide](docs/getting-started/installation.md)
+- [Configuration Guide](docs/getting-started/configuration.md)
+- [Database Setup](docs/getting-started/database.md)
+- [Basic Usage](docs/usage/basic-usage.md)
+- [Available Calculators](docs/usage/calculators.md)
+- [Examples](docs/usage/examples.md)
+- [API Reference](docs/api/point-based-calculations.md)
+
+## Development
+
+- [Contributing Guide](docs/development/contributing.md)
+- [Code Style Guide](docs/development/code-style.md)
+- [Architecture Guide](docs/development/architecture.md)
+- [Testing Guide](docs/development/testing.md)
+- [Database Guide](docs/development/database.md)
+- [Deployment Guide](docs/development/deployment.md)
+- [Troubleshooting Guide](docs/development/troubleshooting.md)
+
+## Testing
+
+```bash
+# Run all tests
+python -m pytest
+
+# Run specific test file
+python -m pytest tests/test_point_based_calculations.py
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+See [Contributing Guide](docs/development/contributing.md) for more details.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
