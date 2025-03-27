@@ -51,5 +51,7 @@ All data has been reviewed and refined by the National Cancer Center's Fine Dust
 ## Support
 
 For support or questions, please contact:
-- Email: dongook.son@gmail.com
-- GitHub Issues: [Project Issues](https://github.com/yourusername/korea-geovariable/issues)
+
+- Email: [Han Jimin - 한지민](mailto:hangm0101@ncc.re.kr)
+- Email: [Son Dongook - 손동욱](mailto:d@dou.so)
+- GitHub Issues: [Project Issues](https://github.com/ncc-airhealth/korea-geovariable/issues)
