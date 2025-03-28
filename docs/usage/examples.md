@@ -340,6 +340,109 @@ spatial_patterns = analyze_spatial_patterns()
 spatial_patterns.to_csv('spatial_patterns.csv', index=False)
 ```
 
+## Multiple Calculators - Multiple Years
+
+```python
+from point_based_calculations import (
+    BufferSize,
+    BusinessRegistrationCountCalculator,
+    BusinessEmployeeCountCalculator
+)
+
+# Initialize variables
+buffer_size = BufferSize.MEDIUM
+years = [2010, 2015, 2020]
+calculators = []
+
+# Create calculators for different years
+for year in years:
+    calculators.append(BusinessRegistrationCountCalculator(buffer_size, year))
+    calculators.append(BusinessEmployeeCountCalculator(buffer_size, year))
+
+# Run calculations
+results = []
+for calculator in calculators:
+    results.append(calculator.calculate())
+
+# Merge results (assuming ID column is 'id')
+import pandas as pd
+from functools import reduce
+
+final_result = reduce(
+    lambda left, right: pd.merge(left, right, on='id', how='outer'),
+    results
+)
+
+print(final_result.head())
+```
+
+## Border-Based Calculation Example
+
+```python
+from border_based_calculations_by_year import (
+    BorderType,
+    RiverCalculator,
+    EmissionCalculator,
+    LanduseAreaCalculator
+)
+
+# Initialize variables
+border_type = BorderType.sgg  # Use Sigungu (City/County/District) level
+year = 2020
+emission_year = 2019  # Emission data is available for different years
+
+# Create calculators
+river_calc = RiverCalculator(border_type, year)
+emission_calc = EmissionCalculator(border_type, emission_year)
+landuse_calc = LanduseAreaCalculator(border_type, year)
+
+# Run calculations
+river_result = river_calc.calculate()
+emission_result = emission_calc.calculate()
+landuse_result = landuse_calc.calculate()
+
+# Merge results
+import pandas as pd
+from functools import reduce
+
+# Identify the common border code column based on border_type
+border_cd = river_calc.border_cd_col  # This will be 'sigungu_cd', 'adm_dr_cd', or 'tot_reg_cd'
+
+final_result = reduce(
+    lambda left, right: pd.merge(left, right, on=border_cd, how='outer'),
+    [river_result, emission_result, landuse_result]
+)
+
+print(f"Combined results for {border_type.value} in {year}:")
+print(final_result.head())
+```
+
+## Multiple Border Types Example
+
+```python
+from border_based_calculations_by_year import (
+    BorderType,
+    TopographicModelCalculator
+)
+
+# Initialize variables
+year = 2020
+results = {}
+
+# Calculate topographic model data for different border types
+for border_type in BorderType:
+    calculator = TopographicModelCalculator(border_type, year)
+    results[border_type.value] = calculator.calculate()
+    print(f"Calculated data for {border_type.value}: {len(results[border_type.value])} rows")
+
+# Process results for each border type separately
+for border_type, result_df in results.items():
+    print(f"\nSummary for {border_type}:")
+    for column in result_df.columns:
+        if column.startswith('dem_') or column.startswith('dsm_'):
+            print(f"{column}: {result_df[column].mean()}")
+```
+
 ## Next Steps
 
 1. Check [Available Calculators](calculators.md) for more calculation options

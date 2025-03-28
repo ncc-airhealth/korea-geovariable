@@ -42,6 +42,7 @@ nav:
     - Examples: usage/examples.md
   - API Reference:
     - Point Based Calculations: api/point-based-calculations.md
+    - Border Based Calculations: api/border-based-calculations.md
   - Development:
     - Contributing: development/contributing.md
     - Code Style: development/code-style.md

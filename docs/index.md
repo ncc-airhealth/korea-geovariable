@@ -48,7 +48,8 @@ All data has been reviewed and refined by the National Cancer Center's Fine Dust
 - [Basic Usage](usage/basic-usage.md) - Getting started with the library
 - [Available Calculators](usage/calculators.md) - List of supported calculations
 - [Examples](usage/examples.md) - Usage examples
-- [API Reference](api/point-based-calculations.md) - Detailed API documentation
+- [API Reference: Point-Based Calculations](api/point-based-calculations.md) - Detailed API documentation for point-based calculators
+- [API Reference: Border-Based Calculations](api/border-based-calculations.md) - Detailed API documentation for border-based calculators
 
 ## Support
 

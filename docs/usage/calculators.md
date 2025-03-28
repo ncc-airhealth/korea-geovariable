@@ -387,6 +387,161 @@ calculator = LanduseCalculator(
 results = calculator.calculate()
 ```
 
+## Border Based Calculators
+
+### Border Types
+```python
+from border_based_calculations_by_year import BorderType
+
+# Available border types
+BorderType.sgg  # Sigungu (City/County/District)
+BorderType.emd  # Eup/Myeon/Dong (Town/Township/Neighborhood)
+BorderType.jgg  # Custom research grid
+```
+
+### River Calculator
+```python
+from border_based_calculations_by_year import RiverCalculator, BorderType
+
+calculator = RiverCalculator(
+    border_type=BorderType.sgg,
+    year=2020
+)
+results = calculator.calculate()
+```
+
+### Landuse Area Calculator
+```python
+from border_based_calculations_by_year import LanduseAreaCalculator, BorderType
+
+calculator = LanduseAreaCalculator(
+    border_type=BorderType.sgg,
+    year=2020
+)
+results = calculator.calculate()
+```
+
+### NDVI Calculator
+```python
+from border_based_calculations_by_year import NdviCalculator, BorderType
+
+calculator = NdviCalculator(
+    border_type=BorderType.sgg,
+    year=2020
+)
+results = calculator.calculate()
+```
+
+### Topographic Model Calculator
+```python
+from border_based_calculations_by_year import TopographicModelCalculator, BorderType
+
+calculator = TopographicModelCalculator(
+    border_type=BorderType.sgg,
+    year=2020
+)
+results = calculator.calculate()
+```
+
+### Rail Calculator
+```python
+from border_based_calculations_by_year import RailCalculator, BorderType
+
+calculator = RailCalculator(
+    border_type=BorderType.sgg,
+    year=2020
+)
+results = calculator.calculate()
+```
+
+### Road Calculator
+```python
+from border_based_calculations_by_year import RoadCalculator, BorderType
+
+calculator = RoadCalculator(
+    border_type=BorderType.sgg,
+    year=2020
+)
+results = calculator.calculate()
+```
+
+### Car Registration Calculator
+```python
+from border_based_calculations_by_year import CarRegistrationCalculator, BorderType
+
+calculator = CarRegistrationCalculator(
+    border_type=BorderType.sgg,
+    year=2020
+)
+results = calculator.calculate()
+```
+
+### Coastline Distance Calculator
+```python
+from border_based_calculations_by_year import CoastlineDistanceCalculator, BorderType
+
+calculator = CoastlineDistanceCalculator(
+    border_type=BorderType.sgg,
+    year=2020
+)
+results = calculator.calculate()
+```
+
+### Airport Distance Calculator
+```python
+from border_based_calculations_by_year import AirportDistanceCalculator, BorderType
+
+calculator = AirportDistanceCalculator(
+    border_type=BorderType.sgg,
+    year=2020
+)
+results = calculator.calculate()
+```
+
+### Military Demarcation Line Distance Calculator
+```python
+from border_based_calculations_by_year import MilitaryDemarcationLineDistanceCalculator, BorderType
+
+calculator = MilitaryDemarcationLineDistanceCalculator(
+    border_type=BorderType.sgg,
+    year=2020
+)
+results = calculator.calculate()
+```
+
+### Port Distance Calculator
+```python
+from border_based_calculations_by_year import PortDistanceCalculator, BorderType
+
+calculator = PortDistanceCalculator(
+    border_type=BorderType.sgg,
+    year=2020
+)
+results = calculator.calculate()
+```
+
+### Emission Calculator
+```python
+from border_based_calculations_by_year import EmissionCalculator, BorderType
+
+calculator = EmissionCalculator(
+    border_type=BorderType.sgg,
+    year=2019
+)
+results = calculator.calculate()
+```
+
+### Raster Emission Calculator
+```python
+from border_based_calculations_by_year import RasterEmissionCalculator, BorderType
+
+calculator = RasterEmissionCalculator(
+    border_type=BorderType.sgg,
+    year=2019
+)
+results = calculator.calculate()
+```
+
 ## Next Steps
 
 1. Check [Examples](examples.md) for specific use cases

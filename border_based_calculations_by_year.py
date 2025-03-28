@@ -1,22 +1,22 @@
 import os
 from abc import ABC, abstractmethod
+from datetime import datetime
 from enum import Enum
 from functools import reduce
-from datetime import datetime
 
-import geopandas as gpd
 import pandas as pd
 from dotenv import load_dotenv
 from dou import logger
 from sqlalchemy import create_engine, text
 from tqdm import tqdm
 
-
 load_dotenv()
 
+
 def pdt(s):
-    print(f"\n{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}" + "="*60)
+    print(f"\n{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}" + "=" * 60)
     print(s)
+
 
 # Database connection setup
 engine = create_engine(os.getenv("DB_URL"))  # type: ignore
@@ -25,10 +25,10 @@ conn = engine.connect()
 
 class BorderType(Enum):
     """Valid border type"""
+
     sgg = "sgg"
     emd = "emd"
     jgg = "jgg"
-    
 
 
 class BorderAbstractCalculator(ABC):
@@ -43,20 +43,19 @@ class BorderAbstractCalculator(ABC):
         """
         self.border_type = border_type
         self.year = year
-        
+
         if border_type.value == "sgg":
             self.border_tbl = f"bnd_sigungu_00_{year}_4q"
-            self.border_cd_col  = f"sigungu_cd"
-            self.border_nm_col = f"sigungu_nm"
+            self.border_cd_col = "sigungu_cd"
+            self.border_nm_col = "sigungu_nm"
         elif border_type.value == "emd":
             self.border_tbl = f"bnd_dong_00_{year}_4q"
-            self.border_cd_col  = f"adm_dr_cd"
-            self.border_nm_col = f"adm_dr_nm"
+            self.border_cd_col = "adm_dr_cd"
+            self.border_nm_col = "adm_dr_nm"
         elif border_type.value == "jgg":
-            self.border_tbl = f"jgg_borders_2023"
-            self.border_cd_col  = f"tot_reg_cd"
-            self.border_nm_col = f"tot_reg_cd"
-
+            self.border_tbl = "jgg_borders_2023"
+            self.border_cd_col = "tot_reg_cd"
+            self.border_nm_col = "tot_reg_cd"
 
     @property
     @abstractmethod
@@ -99,7 +98,6 @@ class BorderAbstractCalculator(ABC):
                 f"Invalid year {self.year}. Valid years are: {valid_years_str}"
             )
 
-        
 
 class RiverCalculator(BorderAbstractCalculator):
     """Calculator for river variable"""
@@ -118,7 +116,7 @@ class RiverCalculator(BorderAbstractCalculator):
     @property
     def valid_years(self) -> list[int]:
         return [2000, 2005, 2010, 2015, 2020]
-    
+
     def calculate(self) -> pd.DataFrame:
         """
         Execute the river area calculation within border.
@@ -143,7 +141,7 @@ class RiverCalculator(BorderAbstractCalculator):
                 ORDER BY
                     b.{border_cd};
                 """
-            )
+        )
         try:
             result = conn.execute(sql)
             rows = result.all()
@@ -158,8 +156,8 @@ class EmissionCalculator(BorderAbstractCalculator):
 
     def __init__(self, border_type: BorderType, year: int):
         super().__init__(border_type, year)
-        border_year_map = {2001: 2000, 2005: 2005, 2010: 2010, 2015:2015, 2019: 2020}
-        self.border_tbl = self.border_tbl.replace(f"{year}", f"{border_year_map[year]}") 
+        border_year_map = {2001: 2000, 2005: 2005, 2010: 2010, 2015: 2015, 2019: 2020}
+        self.border_tbl = self.border_tbl.replace(f"{year}", f"{border_year_map[year]}")
 
     @property
     def table_name(self) -> str:
@@ -172,7 +170,7 @@ class EmissionCalculator(BorderAbstractCalculator):
     @property
     def valid_years(self) -> list[int]:
         return [2001, 2005, 2010, 2015, 2019]
-    
+
     def calculate(self) -> pd.DataFrame:
         """
         Execute the emission within border.
@@ -186,8 +184,13 @@ class EmissionCalculator(BorderAbstractCalculator):
         year = self.year
         label = self.label_prefix
         matter_alias = {
-            "co": "CO", "nox": "NOx", "nh3": "NH3", "voc": "VOC", 
-            "pm10": "PM10", "sox": "SOx", "tsp": "TSP"
+            "co": "CO",
+            "nox": "NOx",
+            "nh3": "NH3",
+            "voc": "VOC",
+            "pm10": "PM10",
+            "sox": "SOx",
+            "tsp": "TSP",
         }
 
         sql = text(
@@ -248,12 +251,13 @@ class EmissionCalculator(BorderAbstractCalculator):
             logger.error(f"Error in {self.__class__.__name__}: {e}")
             raise
 
+
 class CarRegistrationCalculator(BorderAbstractCalculator):
     """Calculator for car registration number variable"""
 
     def __init__(self, border_type: BorderType, year: int):
         super().__init__(border_type, year)
-        
+
     @property
     def table_name(self) -> str:
         return "car_registration"
@@ -265,7 +269,7 @@ class CarRegistrationCalculator(BorderAbstractCalculator):
     @property
     def valid_years(self) -> list[int]:
         return [2000, 2005, 2010, 2015, 2020]
-    
+
     def calculate(self) -> pd.DataFrame:
         """
         Execute the car registration variable calculation within border.
@@ -308,7 +312,7 @@ class LanduseAreaCalculator(BorderAbstractCalculator):
 
     def __init__(self, border_type: BorderType, year: int):
         super().__init__(border_type, year)
-        
+
     @property
     def table_name(self) -> str:
         return "landuse"
@@ -320,7 +324,7 @@ class LanduseAreaCalculator(BorderAbstractCalculator):
     @property
     def valid_years(self) -> list[int]:
         return [2000, 2005, 2010, 2015, 2020]
-    
+
     def calculate(self) -> pd.DataFrame:
         """
         Execute the landuse area/ratio variable calculation within border calculation.
@@ -334,7 +338,7 @@ class LanduseAreaCalculator(BorderAbstractCalculator):
         border_nm = self.border_nm_col
         landuse_table = f"landuse_v002_{year}"
         codes = [110, 120, 130, 140, 150, 160, 200, 310, 320, 330, 400, 500, 600, 710]
-        
+
         df_list = []
         for code in tqdm(codes, desc=f"({year}) landuse area/ratio calculation "):
             area_col_name = f"lu_{code}_area"
@@ -361,9 +365,11 @@ class LanduseAreaCalculator(BorderAbstractCalculator):
             except Exception as e:
                 logger.error(f"Error in {self.__class__.__name__}: {e}")
                 raise
-        
 
-        df_merged = reduce(lambda ldf, rdf: pd.merge(ldf, rdf, on=[border_cd, border_nm], how='outer'), df_list)
+        df_merged = reduce(
+            lambda ldf, rdf: pd.merge(ldf, rdf, on=[border_cd, border_nm], how="outer"),
+            df_list,
+        )
         return df_merged
 
 
@@ -372,7 +378,7 @@ class CoastlineDistanceCalculator(BorderAbstractCalculator):
 
     def __init__(self, border_type: BorderType, year: int):
         super().__init__(border_type, year)
-        
+
     @property
     def table_name(self) -> str:
         return "coastline"
@@ -384,7 +390,7 @@ class CoastlineDistanceCalculator(BorderAbstractCalculator):
     @property
     def valid_years(self) -> list[int]:
         return [2000, 2005, 2010, 2015, 2020]
-    
+
     def calculate(self) -> pd.DataFrame:
         """
         Execute the distance from coastline to border centroid calculation.
@@ -422,7 +428,7 @@ class NdviCalculator(BorderAbstractCalculator):
 
     def __init__(self, border_type: BorderType, year: int):
         super().__init__(border_type, year)
-        
+
     @property
     def table_name(self) -> str:
         return "ndvi"
@@ -434,7 +440,7 @@ class NdviCalculator(BorderAbstractCalculator):
     @property
     def valid_years(self) -> list[int]:
         return [2000, 2005, 2010, 2015, 2020]
-    
+
     def calculate(self) -> pd.DataFrame:
         """
         Execute the NDVI calculation.
@@ -474,10 +480,12 @@ class NdviCalculator(BorderAbstractCalculator):
             rows = result.all()
             df = pd.DataFrame([dict(row._mapping) for row in rows])
 
-            str2tuple = lambda x: x[1:-1].split(',')
+            str2tuple = lambda x: x[1:-1].split(",")
             for sti, stat_type in enumerate(stat_types):
-               df[f"{self.label_prefix}_{stat_type}"] = df["stats"].apply(lambda x: str2tuple(x)[sti])
-            df = df.drop(["stats"], axis=1) 
+                df[f"{self.label_prefix}_{stat_type}"] = df["stats"].apply(
+                    lambda x: str2tuple(x)[sti]
+                )
+            df = df.drop(["stats"], axis=1)
             return df
         except Exception as e:
             logger.error(f"Error in {self.__class__.__name__}: {e}")
@@ -489,7 +497,7 @@ class AirportDistanceCalculator(BorderAbstractCalculator):
 
     def __init__(self, border_type: BorderType, year: int):
         super().__init__(border_type, year)
-        
+
     @property
     def table_name(self) -> str:
         return "airport"
@@ -501,7 +509,7 @@ class AirportDistanceCalculator(BorderAbstractCalculator):
     @property
     def valid_years(self) -> list[int]:
         return [2000, 2005, 2010, 2015, 2020]
-    
+
     def calculate(self) -> pd.DataFrame:
         """
         Execute the nearest airport distance calculation within border.
@@ -555,7 +563,7 @@ class MilitaryDemarcationLineDistanceCalculator(BorderAbstractCalculator):
 
     def __init__(self, border_type: BorderType, year: int):
         super().__init__(border_type, year)
-        
+
     @property
     def table_name(self) -> str:
         return "mdl"
@@ -567,9 +575,8 @@ class MilitaryDemarcationLineDistanceCalculator(BorderAbstractCalculator):
     @property
     def valid_years(self) -> list[int]:
         return [2000, 2005, 2010, 2015, 2020]
-    
+
     def calculate(self) -> pd.DataFrame:
-        
         """
         Execute the distance from mdl to border centroid calculation.
 
@@ -611,7 +618,7 @@ class PortDistanceCalculator(BorderAbstractCalculator):
 
     def __init__(self, border_type: BorderType, year: int):
         super().__init__(border_type, year)
-        
+
     @property
     def table_name(self) -> str:
         return "ports"
@@ -623,9 +630,8 @@ class PortDistanceCalculator(BorderAbstractCalculator):
     @property
     def valid_years(self) -> list[int]:
         return [2000, 2005, 2010, 2015, 2020]
-    
+
     def calculate(self) -> pd.DataFrame:
-        
         """
         Execute the distance from port to border centroid calculation.
 
@@ -691,7 +697,7 @@ class RailCalculator(BorderAbstractCalculator):
     @property
     def valid_years(self) -> list[int]:
         return [2000, 2005, 2010, 2015, 2020]
-    
+
     def calculate(self) -> pd.DataFrame:
         """
         Execute the rail length calculation within border.
@@ -717,7 +723,7 @@ class RailCalculator(BorderAbstractCalculator):
                 ORDER BY
                     b.{border_cd};
                 """
-            )
+        )
         try:
             result = conn.execute(sql)
             rows = result.all()
@@ -744,7 +750,7 @@ class RoadCalculator(BorderAbstractCalculator):
     @property
     def valid_years(self) -> list[int]:
         return [2000, 2005, 2010, 2015, 2020]
-    
+
     def calculate(self, verbose=False) -> pd.DataFrame:
         """
         Execute the road length calculation within border.
@@ -763,7 +769,9 @@ class RoadCalculator(BorderAbstractCalculator):
             result = conn.execute(text(f"SELECT {border_cd} FROM {border_tbl}"))
             border_id_df = pd.DataFrame([dict(row._mapping) for row in result.all()])
             row_dict_list = []
-            for _, border_sr in tqdm(border_id_df.iterrows(), total=len(border_id_df), disable=not verbose):
+            for _, border_sr in tqdm(
+                border_id_df.iterrows(), total=len(border_id_df), disable=not verbose
+            ):
                 sel_border_cd = int(border_sr[border_cd])
                 # print(type(sel_border_cd), sel_border_cd)
                 sql = text(
@@ -782,7 +790,9 @@ class RoadCalculator(BorderAbstractCalculator):
                     """
                 )
                 result = conn.execute(sql)
-                row_dict_list = row_dict_list + [dict(row._mapping) for row in result.all()]
+                row_dict_list = row_dict_list + [
+                    dict(row._mapping) for row in result.all()
+                ]
 
             return pd.DataFrame(row_dict_list)
 
@@ -808,7 +818,7 @@ class TopographicModelCalculator(BorderAbstractCalculator):
     @property
     def valid_years(self) -> list[int]:
         return [2000, 2005, 2010, 2015, 2020]
-    
+
     def calculate(self) -> pd.DataFrame:
         """
         Execute the dem/dsm calculation.
@@ -822,7 +832,7 @@ class TopographicModelCalculator(BorderAbstractCalculator):
         year = self.year
         stat_types = ["count", "sum", "mean", "std", "min", "max"]
         topo_types = ["dem", "dsm"]
-        
+
         sql_dict = {
             topo_type: text(
                 f"""
@@ -853,15 +863,22 @@ class TopographicModelCalculator(BorderAbstractCalculator):
                 result = conn.execute(sql)
                 rows = result.all()
                 df = pd.DataFrame([dict(row._mapping) for row in rows])
-                str2tuple = lambda x: x[1:-1].split(',')
+                str2tuple = lambda x: x[1:-1].split(",")
                 for sti, stat_type in enumerate(stat_types):
-                    df[f"{topo_type}_{stat_type}"] = df["stats"].apply(lambda x: str2tuple(x)[sti])
-                df = df.drop(["stats"], axis=1) 
+                    df[f"{topo_type}_{stat_type}"] = df["stats"].apply(
+                        lambda x: str2tuple(x)[sti]
+                    )
+                df = df.drop(["stats"], axis=1)
                 topo_df_dict[topo_type] = df
-            
-            df = pd.merge(topo_df_dict[topo_types[0]], topo_df_dict[topo_types[1]], on=[border_cd], how='outer')
+
+            df = pd.merge(
+                topo_df_dict[topo_types[0]],
+                topo_df_dict[topo_types[1]],
+                on=[border_cd],
+                how="outer",
+            )
             return df
-        
+
         except Exception as e:
             logger.error(f"Error in {self.__class__.__name__}: {e}")
             raise
@@ -872,8 +889,8 @@ class RasterEmissionCalculator(BorderAbstractCalculator):
 
     def __init__(self, border_type: BorderType, year: int):
         super().__init__(border_type, year)
-        border_year_map = {2001: 2000, 2005: 2005, 2010: 2010, 2015:2015, 2019: 2020}
-        self.border_tbl = self.border_tbl.replace(f"{year}", f"{border_year_map[year]}") 
+        border_year_map = {2001: 2000, 2005: 2005, 2010: 2010, 2015: 2015, 2019: 2020}
+        self.border_tbl = self.border_tbl.replace(f"{year}", f"{border_year_map[year]}")
 
     @property
     def table_name(self) -> str:
@@ -886,7 +903,7 @@ class RasterEmissionCalculator(BorderAbstractCalculator):
     @property
     def valid_years(self) -> list[int]:
         return [2001, 2005, 2010, 2015, 2019]
-    
+
     def calculate(self) -> pd.DataFrame:
         """
         Execute the raster emission calculator within border.
@@ -900,8 +917,13 @@ class RasterEmissionCalculator(BorderAbstractCalculator):
         year = self.year
         label = self.label_prefix
         matter_alias = {
-            "co": "CO", "nox": "NOx", "nh3": "NH3", "voc": "VOC", 
-            "pm10": "PM10", "sox": "SOx", "tsp": "TSP"
+            "co": "CO",
+            "nox": "NOx",
+            "nh3": "NH3",
+            "voc": "VOC",
+            "pm10": "PM10",
+            "sox": "SOx",
+            "tsp": "TSP",
         }
 
         sql = lambda matter: text(
@@ -938,7 +960,7 @@ class RasterEmissionCalculator(BorderAbstractCalculator):
             ;
             """
         )
-        
+
         try:
             df_list = []
             for matter in matter_alias.keys():
@@ -946,9 +968,12 @@ class RasterEmissionCalculator(BorderAbstractCalculator):
                 rows = result.all()
                 df_list.append(pd.DataFrame([dict(row._mapping) for row in rows]))
 
-            df_merged = reduce(lambda ldf, rdf: pd.merge(ldf, rdf, on=[border_cd], how='outer'), df_list)
+            df_merged = reduce(
+                lambda ldf, rdf: pd.merge(ldf, rdf, on=[border_cd], how="outer"),
+                df_list,
+            )
             return df_merged
-        
+
         except Exception as e:
             logger.error(f"Error in {self.__class__.__name__}: {e}")
             raise
@@ -1073,6 +1098,3 @@ if __name__ == "__main__":
             df = RasterEmissionCalculator(border_type, year).calculate()
             print(df.shape)
             print(df.sample(5))
-
-
-
