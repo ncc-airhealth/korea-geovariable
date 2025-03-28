@@ -1,6 +1,6 @@
 # Korea Geovariable
 
-Welcome to the Korea Geovariable documentation! This project provides tools for calculating spatial data over time for specific coordinates, known as geographic variables (geovariables). It supports most of the geographic variables defined in Eum et al.
+Welcome to the Korea Geovariable documentation! This project provides tools for calculating spatial data over time for specific coordinates, known as geographic variables (geovariables). It supports most of the geographic variables defined in [Computation of geographic variables for air pollution prediction models in South Korea, Eum et al](https://doi.org/10.5620/eht.e2015010).
 
 ## Overview
 
@@ -23,7 +23,7 @@ All data has been reviewed and refined by the National Cancer Center's Fine Dust
 
 2. **Installation**
    ```bash
-   git clone https://github.com/yourusername/korea-geovariable.git
+   git clone https://github.com/ncc-airhealth/korea-geovariable.git
    cd korea-geovariable
    uv sync
    ```
