@@ -1,11 +1,13 @@
 import os
 from abc import ABC, abstractmethod
 from enum import Enum
+from typing import Literal
 
 import pandas as pd
 from dotenv import load_dotenv
 from dou import logger
 from sqlalchemy import create_engine, text
+from tqdm import tqdm
 
 load_dotenv()
 
@@ -22,6 +24,21 @@ class BufferSize(Enum):
     MEDIUM = 500
     LARGE = 1000
     VERY_LARGE = 5000
+
+
+class NdviBufferSize(Enum):
+    """Valid buffer sizes in meters."""
+
+    LARGE = 1000
+    VERY_LARGE = 5000
+
+
+class EmissionBufferSize(Enum):
+    """Valid buffer sizes in meters."""
+
+    SMALL = 3000
+    MEDIUM = 10000
+    LARGE = 20000
 
 
 def merge_dataframes_by_id(
@@ -807,22 +824,888 @@ class HouseTypeCountCalculator(PointAbstractCalculator):
             raise
 
 
-# TODO: Emission
-# TODO: Traffic
-# TODO: Population
-# TODO: NDVI
-# TODO: Landuse
-# TODO: Relative DEM, DSM
+class EmissionVectorBasedCalculator(PointAbstractCalculator):
+    """Calculator for emission based on vector data."""
+
+    def __init__(self, buffer_size: EmissionBufferSize, year: int):
+        super().__init__(year)
+        self.buffer_size = buffer_size
+
+    @property
+    def table_name(self) -> list[str]:
+        return ["emission_point", "emission_line", "emission_area"]
+
+    @property
+    def label_prefix(self) -> str:
+        return "EM"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2010, 2015, 2019]
+
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the emission calculation.
+
+        Returns:
+            DataFrame containing calculation results with emission variables
+        """
+        self.validate_year()
+        buffer = self.buffer_size.value
+        emission_year = self.year
+        label_postfix = str(self.buffer_size.value).zfill(5)
+
+        sql = text(
+            f"""
+                WITH tmp AS (
+                    SELECT
+                        a.tot_reg_cd,
+                        'emission_area' AS tablename,
+                        COALESCE(SUM(b.co),
+                            0) AS co,
+                        COALESCE(SUM(b.nox),
+                            0) AS nox,
+                        COALESCE(SUM(b.nh3),
+                            0) AS nh3,
+                        COALESCE(SUM(b.voc),
+                            0) AS voc,
+                        COALESCE(SUM(b.pm10),
+                            0) AS pm10,
+                        COALESCE(SUM(b.sox),
+                            0) AS sox,
+                        COALESCE(SUM(b.tsp),
+                            0) AS tsp
+                    FROM
+                        "jgg_centroid_adjusted" AS a
+                    LEFT JOIN emission_point AS b ON ST_Contains(ST_Buffer(a.geom,
+                            {buffer}),
+                        b.geometry)
+                        AND b.year = {emission_year}
+                GROUP BY
+                    a.tot_reg_cd
+                UNION
+                SELECT
+                    a.tot_reg_cd,
+                    'emission_line' AS tablename,
+                    COALESCE(SUM(b.co),
+                        0) AS co,
+                    COALESCE(SUM(b.nox),
+                        0) AS nox,
+                    COALESCE(SUM(b.nh3),
+                        0) AS nh3,
+                    COALESCE(SUM(b.voc),
+                        0) AS voc,
+                    COALESCE(SUM(b.pm10),
+                        0) AS pm10,
+                    COALESCE(SUM(b.sox),
+                        0) AS sox,
+                    COALESCE(SUM(b.tsp),
+                        0) AS tsp
+                FROM
+                    "jgg_centroid_adjusted" AS a
+                LEFT JOIN emission_line AS b ON ST_Contains(ST_Buffer(a.geom,
+                        {buffer}),
+                    b.geometry)
+                        AND b.year = {emission_year}
+                GROUP BY
+                    a.tot_reg_cd
+                UNION
+                SELECT
+                    a.tot_reg_cd,
+                    'emission_point' AS tablename,
+                    COALESCE(SUM(b.co),
+                        0) AS co,
+                    COALESCE(SUM(b.nox),
+                        0) AS nox,
+                    COALESCE(SUM(b.nh3),
+                        0) AS nh3,
+                    COALESCE(SUM(b.voc),
+                        0) AS voc,
+                    COALESCE(SUM(b.pm10),
+                        0) AS pm10,
+                    COALESCE(SUM(b.sox),
+                        0) AS sox,
+                    COALESCE(SUM(b.tsp),
+                        0) AS tsp
+                FROM
+                    "jgg_centroid_adjusted" AS a
+                    LEFT JOIN emission_area AS b ON ST_Contains(ST_Buffer(a.geom,
+                            {buffer}),
+                        b.geometry)
+                        AND b.year = {emission_year}
+                GROUP BY
+                    a.tot_reg_cd
+                )
+                SELECT
+                    tmp.tot_reg_cd,
+                    sum(co) as "{self.label_prefix}_CO_{label_postfix}",
+                    sum(nox) as "{self.label_prefix}_NOx_{label_postfix}",
+                    sum(nh3) as "{self.label_prefix}_NH3_{label_postfix}",
+                    sum(voc) as "{self.label_prefix}_VOC_{label_postfix}",
+                    sum(pm10) as "{self.label_prefix}_PM10_{label_postfix}",
+                    sum(sox) as "{self.label_prefix}_SOx_{label_postfix}",
+                    sum(tsp) as "{self.label_prefix}_TSP_{label_postfix}"
+                FROM
+                    tmp
+                GROUP BY
+                    tot_reg_cd;
+                    """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
+class EmissionRasterValueCalculator(PointAbstractCalculator):
+    # TODO: data is corrupted
+    """Calculator for emission raster values."""
+
+    def __init__(self, buffer_size: EmissionBufferSize, year: int):
+        """
+        Initialize calculator with buffer size and year.
+
+        Args:
+            year: Reference year for the calculation
+            emission_type: Type of emission (area, line, point)
+            pollutant_type: Type of pollutant (co, nox, nh3, voc, pm10, sox, tsp)
+        """
+        super().__init__(year)
+        self.buffer_size = buffer_size
+        self.emission_type = emission_type.lower()
+        self.pollutant_type = pollutant_type.lower()
+
+    @property
+    def table_name(self) -> str:
+        return "emission_raster"
+
+    @property
+    def label_prefix(self) -> str:
+        return "EM"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2001, 2005, 2010]  # Example valid years, adjust as needed
+
+    def validate_emission_type(self) -> None:
+        """
+        Validate if the emission type is valid.
+
+        Raises:
+            ValueError: If the emission type is invalid
+        """
+        valid_emission_types = ["area", "line", "point"]
+        if self.emission_type not in valid_emission_types:
+            valid_types_str = ", ".join(valid_emission_types)
+            raise ValueError(
+                f"Invalid emission type '{self.emission_type}'. Valid types are: {valid_types_str}"
+            )
+
+    def validate_pollutant_type(self) -> None:
+        """
+        Validate if the pollutant type is valid.
+
+        Raises:
+            ValueError: If the pollutant type is invalid
+        """
+        valid_pollutant_types = ["co", "nox", "nh3", "voc", "pm10", "sox", "tsp"]
+        if self.pollutant_type not in valid_pollutant_types:
+            valid_types_str = ", ".join(valid_pollutant_types)
+            raise ValueError(
+                f"Invalid pollutant type '{self.pollutant_type}'. Valid types are: {valid_types_str}"
+            )
+
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the emission raster value calculation.
+
+        Returns:
+            DataFrame containing calculation results with emission raster values
+        """
+        self.validate_year()
+        self.validate_emission_type()
+        self.validate_pollutant_type()
+
+        column_name = f"{self.label_prefix}_{self.emission_type}_{self.pollutant_type}_{self.year}"
+
+        sql = text(
+            f"""
+            SELECT src.tot_reg_cd,
+                   ST_Value(dst.rast, 1, src.geom) AS "{column_name}"
+            FROM jgg_centroid_adjusted AS src,
+                 {self.table_name} AS dst
+            WHERE ST_Intersects(src.geom, dst.rast)
+              AND dst.year = {self.year}
+              AND dst.emission_type = '{self.emission_type}'
+              AND dst.pollutant_type = '{self.pollutant_type}'
+            ORDER BY src.tot_reg_cd;
+
+                WITH tmp AS (
+                    SELECT
+                        a.tot_reg_cd,
+                        'emission_area' AS tablename,
+                        COALESCE(SUM(b.co),
+                            0) AS co,
+                        COALESCE(SUM(b.nox),
+                            0) AS nox,
+                        COALESCE(SUM(b.nh3),
+                            0) AS nh3,
+                        COALESCE(SUM(b.voc),
+                            0) AS voc,
+                        COALESCE(SUM(b.pm10),
+                            0) AS pm10,
+                        COALESCE(SUM(b.sox),
+                            0) AS sox,
+                        COALESCE(SUM(b.tsp),
+                            0) AS tsp
+                    FROM
+                        "jgg_centroid_adjusted" AS a
+                    LEFT JOIN emission_point AS b ON ST_Contains(ST_Buffer(a.geom,
+                            {buffer}),
+                        b.geometry)
+                        AND b.year = {emission_year}
+                GROUP BY
+                    a.tot_reg_cd
+                UNION
+                SELECT
+                    a.tot_reg_cd,
+                    'emission_line' AS tablename,
+                    COALESCE(SUM(b.co),
+                        0) AS co,
+                    COALESCE(SUM(b.nox),
+                        0) AS nox,
+                    COALESCE(SUM(b.nh3),
+                        0) AS nh3,
+                    COALESCE(SUM(b.voc),
+                        0) AS voc,
+                    COALESCE(SUM(b.pm10),
+                        0) AS pm10,
+                    COALESCE(SUM(b.sox),
+                        0) AS sox,
+                    COALESCE(SUM(b.tsp),
+                        0) AS tsp
+                FROM
+                    "jgg_centroid_adjusted" AS a
+                    LEFT JOIN emission_line AS b ON ST_Contains(ST_Buffer(a.geom,
+                            {buffer}),
+                        b.geometry)
+                        AND b.year = {emission_year}
+                GROUP BY
+                    a.tot_reg_cd
+                UNION
+                SELECT
+                    a.tot_reg_cd,
+                    'emission_point' AS tablename,
+                    COALESCE(SUM(b.co),
+                        0) AS co,
+                    COALESCE(SUM(b.nox),
+                        0) AS nox,
+                    COALESCE(SUM(b.nh3),
+                        0) AS nh3,
+                    COALESCE(SUM(b.voc),
+                        0) AS voc,
+                    COALESCE(SUM(b.pm10),
+                        0) AS pm10,
+                    COALESCE(SUM(b.sox),
+                        0) AS sox,
+                    COALESCE(SUM(b.tsp),
+                        0) AS tsp
+                FROM
+                    "jgg_centroid_adjusted" AS a
+                    LEFT JOIN emission_area AS b ON ST_Contains(ST_Buffer(a.geom,
+                            {buffer}),
+                        b.geometry)
+                        AND b.year = {emission_year}
+                GROUP BY
+                    a.tot_reg_cd
+                )
+                SELECT
+                    tmp.tot_reg_cd,
+                    sum(co) as "{self.label_prefix}_CO_{label_postfix}",
+                    sum(nox) as "{self.label_prefix}_NOx_{label_postfix}",
+                    sum(nh3) as "{self.label_prefix}_NH3_{label_postfix}",
+                    sum(voc) as "{self.label_prefix}_VOC_{label_postfix}",
+                    sum(pm10) as "{self.label_prefix}_PM10_{label_postfix}",
+                    sum(sox) as "{self.label_prefix}_SOx_{label_postfix}",
+                    sum(tsp) as "{self.label_prefix}_TSP_{label_postfix}"
+                FROM
+                    tmp
+                GROUP BY
+                    tot_reg_cd;
+            """
+        )
+
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
+class RoadLengthCalculator(PointAbstractCalculator):
+    def __init__(self, buffer_size: BufferSize, year: int):
+        super().__init__(year)
+        self.buffer_size = buffer_size
+
+    @property
+    def table_name(self) -> str:
+        return "roads"
+
+    @property
+    def label_prefix(self) -> str:
+        return f"Road_L_{str(self.buffer_size.value).zfill(4)}"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2000, 2005, 2010, 2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        sql = text(
+            f"""
+            SELECT
+                sb.tot_reg_cd, COALESCE(SUM(ST_Length(ST_Intersection(r.geometry, sb.geom_{self.buffer_size.value}))), 0) AS {self.label_prefix}
+            FROM
+                jgg_centroid_adjusted_buffered sb
+                LEFT JOIN (select * from {self.table_name} where year = {self.year}) r ON ST_Intersects(r.geometry, sb.geom_{self.buffer_size.value})
+            GROUP BY
+                sb.tot_reg_cd;
+            """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
+class RoadLengthLaneCalculator(PointAbstractCalculator):
+    def __init__(self, buffer_size: BufferSize, year: int):
+        super().__init__(year)
+        self.buffer_size = buffer_size
+
+    @property
+    def table_name(self) -> str:
+        return "roads"
+
+    @property
+    def label_prefix(self) -> str:
+        return f"Road_LL_{str(self.buffer_size.value).zfill(4)}"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2005, 2010, 2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        sql = text(
+            f"""
+            WITH lls AS (
+            SELECT
+                sb.tot_reg_cd, COALESCE(SUM(ST_Length(ST_Intersection(r.geometry, sb.geom_{self.buffer_size.value}))*r.lanes), 0)  AS ll
+            FROM
+                jgg_centroid_adjusted_buffered sb
+                LEFT JOIN (select * from roads where year = {self.year}) r ON ST_Intersects(r.geometry, sb.geom_{self.buffer_size.value})
+            GROUP BY
+                sb.tot_reg_cd , r.lanes
+            )
+            SELECT tot_reg_cd, sum(ll) as {self.label_prefix}
+            FROM lls
+            GROUP BY tot_reg_cd;
+            """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
+class RoadLengthLaneWidthCalculator(PointAbstractCalculator):
+    def __init__(self, buffer_size: BufferSize, year: int):
+        super().__init__(year)
+        self.buffer_size = buffer_size
+
+    @property
+    def table_name(self) -> str:
+        return "roads"
+
+    @property
+    def label_prefix(self) -> str:
+        return f"Road_LLW_{str(self.buffer_size.value).zfill(4)}"
+
+    @staticmethod
+    def valid_years() -> list[int]:
+        return [2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        sql = text(
+            f"""
+            WITH llws AS (
+            SELECT
+                sb.tot_reg_cd, COALESCE(SUM(ST_Length(ST_Intersection(r.geometry, sb.geom_{self.buffer_size.value}))*r.lanes*r.width), 0)  AS llw
+            FROM
+                jgg_centroid_adjusted_buffered sb
+                LEFT JOIN (select roads.geometry, rd.lanes, rd.width from roads join roads_{self.year} rd on rd.id = roads.original_id where year = {self.year}) r ON ST_Intersects(r.geometry, sb.geom_{self.buffer_size.value})
+            GROUP BY
+                sb.tot_reg_cd , r.lanes, r.width
+            )
+            SELECT tot_reg_cd, sum(llw) as {self.label_prefix}
+            FROM llws
+            GROUP BY tot_reg_cd;
+            """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
+class AbstractMrLengthCalculator(PointAbstractCalculator):
+    def __init__(self, buffer_size: BufferSize, year: int):
+        super().__init__(year)
+        self.buffer_size = buffer_size
+
+    @property
+    def table_name(self):
+        return ""
+
+    @property
+    def label_prefix(self):
+        return f'"{self.table_name.upper()}_L_{str(self.buffer_size.value).zfill(4)}"'
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2000, 2005, 2010, 2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        sql = text(
+            f"""
+            SELECT
+                sb.tot_reg_cd, COALESCE(SUM(ST_Length(ST_Intersection(r.geometry, sb.geom_{self.buffer_size.value}))), 0) AS {self.label_prefix}
+            FROM
+                jgg_centroid_adjusted_buffered sb
+                LEFT JOIN (select * from {self.table_name} where year = {self.year}) r ON ST_Intersects(r.geometry, sb.geom_{self.buffer_size.value})
+            GROUP BY
+                sb.tot_reg_cd;
+                """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
+class Mr1LengthCalculator(AbstractMrLengthCalculator):
+    @property
+    def table_name(self) -> str:
+        return "mr1"
+
+
+class Mr2LengthCalculator(AbstractMrLengthCalculator):
+    @property
+    def table_name(self) -> str:
+        return "mr2"
+
+
+class AbstractMrLengthLaneCalculator(PointAbstractCalculator):
+    def __init__(self, buffer_size: BufferSize, year: int):
+        super().__init__(year)
+        self.buffer_size = buffer_size
+
+    @property
+    def table_name(self) -> str:
+        return ""
+
+    @property
+    def label_prefix(self) -> str:
+        return f'"{self.table_name.upper()}_LL_{str(self.buffer_size.value).zfill(4)}"'
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2000, 2005, 2010, 2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        sql = text(
+            f"""
+            WITH lls AS (
+            SELECT
+                sb.tot_reg_cd, COALESCE(SUM(ST_Length(ST_Intersection(r.geometry, sb.geom_{self.buffer_size.value}))*r.lanes), 0)  AS ll
+            FROM
+                jgg_centroid_adjusted_buffered sb
+                LEFT JOIN (select * from {self.table_name} join roads_{self.year} rd on rd.id = {self.table_name}.roads_{self.year}_id where year = {self.year}) r ON ST_Intersects(r.geometry, sb.geom_{self.buffer_size.value})
+            GROUP BY
+                sb.tot_reg_cd , r.lanes
+            )
+            SELECT tot_reg_cd, sum(ll) as {self.label_prefix}
+            FROM lls
+            GROUP BY tot_reg_cd;
+            """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
+class Mr1LengthLaneCalculator(AbstractMrLengthLaneCalculator):
+    @property
+    def table_name(self) -> str:
+        return "mr1"
+
+
+class Mr2LengthLaneCalculator(AbstractMrLengthLaneCalculator):
+    @property
+    def table_name(self) -> str:
+        return "mr2"
+
+
+class AbstractMrLengthLaneWidthCalculator(PointAbstractCalculator):
+    def __init__(self, buffer_size: BufferSize, year: int):
+        super().__init__(year)
+        self.buffer_size = buffer_size
+
+    @property
+    def table_name(self) -> str:
+        return ""
+
+    @property
+    def label_prefix(self) -> str:
+        return f'"{self.table_name.upper()}_LLW_{str(self.buffer_size.value).zfill(4)}"'
+
+    @staticmethod
+    def valid_years() -> list[int]:
+        return [2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        sql = text(
+            f"""
+            WITH llws AS (
+            SELECT
+                sb.tot_reg_cd, COALESCE(SUM(ST_Length(ST_Intersection(r.geometry, sb.geom_{self.buffer_size.value}))*r.lanes*r.width), 0)  AS llw
+            FROM
+                jgg_centroid_adjusted_buffered sb
+                LEFT JOIN (select * from {self.table_name} join roads_{self.year} rd on rd.id = {self.table_name}.roads_{self.year}_id where year = {self.year}) r ON ST_Intersects(r.geometry, sb.geom_{self.buffer_size.value})
+            GROUP BY
+                sb.tot_reg_cd , r.lanes
+            )
+            SELECT tot_reg_cd, sum(llw) as {self.label_prefix}
+            FROM llws
+            GROUP BY tot_reg_cd;
+            """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
+class Mr1LengthLaneWidthCalculator(AbstractMrLengthLaneWidthCalculator):
+    @property
+    def table_name(self) -> str:
+        return "mr1"
+
+
+class Mr2LengthLaneWidthCalculator(AbstractMrLengthLaneWidthCalculator):
+    @property
+    def table_name(self) -> str:
+        return "mr2"
+
+
+class PopulationCalculator(PointAbstractCalculator):
+    def __init__(self, buffer_size: BufferSize, year: int):
+        super().__init__(year)
+        self.buffer_size = buffer_size
+
+    @property
+    def table_name(self) -> str:
+        return "jgg_adjusted_sgis_pop"
+
+    @property
+    def label_prefix(self) -> str:
+        return "POP_"
+
+    @staticmethod
+    def valid_years() -> list[int]:
+        return [2000, 2005, 2010, 2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        sql = text(
+            f"""SELECT
+            ia.center_reg_cd as tot_reg_cd,
+            COALESCE(SUM(p.pop::float * ia.intersect_area / ia.border_area), 0) AS {f'"{self.label_prefix}{str(self.buffer_size.value).zfill(4)}"'},
+            COALESCE(SUM(p.pop_m::float * ia.intersect_area / ia.border_area), 0) AS {f'"{self.label_prefix}M_{str(self.buffer_size.value).zfill(4)}"'},
+            COALESCE(SUM(p.pop_f::float * ia.intersect_area / ia.border_area), 0) AS {f'"{self.label_prefix}F_{str(self.buffer_size.value).zfill(4)}"'}
+            FROM
+                intersection_areas_{self.buffer_size.value} ia
+            LEFT JOIN
+                jgg_adjusted_sgis_pop p ON p.tot_reg_cd = ia.border_reg_cd AND p.year = {self.year}
+            GROUP BY
+                ia.center_reg_cd
+            ORDER BY
+                ia.center_reg_cd;
+            """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
+class AbstractNdviStatisticCalculator(PointAbstractCalculator):
+    def __init__(self, buffer_size: BufferSize, year: int):
+        super().__init__(year)
+        self.buffer_size = buffer_size
+
+    @property
+    def table_name(self) -> str:
+        return "ndvi_statistics"
+
+    @property
+    def label_prefix(self) -> str:
+        if self.statistic_type == "median":
+            return "NDVI_Y1_MM_"
+        else:
+            return "NDVI_Y1_"
+
+    @property
+    def statistic_type(self) -> Literal["mean", "median", "min", "max", "8mdn"]:
+        return "mean"
+
+    @staticmethod
+    def valid_years() -> list[int]:
+        return [2000, 2005, 2010, 2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        if self.statistic_type != "median":
+            sql = text(
+                f"""
+                SELECT
+                    ms.tot_reg_cd,
+                    COALESCE(st_value(ns.rast, 1, ms.geom), 0) as {self.label_prefix}{self.statistic_type}_{str(self.buffer_size.value).zfill(4)}
+                FROM
+                    "public"."jgg_centroid_adjusted" ms
+                LEFT JOIN
+                    "public".ndvi_statistics ns
+                ON
+                    ST_Intersects(ns.rast, ms.geom)
+                AND
+                    ns."year" = {self.year}
+                AND
+                    ns.statistic = '{self.statistic_type}'
+                """
+            )
+        else:
+            sql = text(
+                f"""
+                SELECT
+                    ms.tot_reg_cd,
+                    COALESCE(AVG((ST_SummaryStats(ST_Clip(ns.rast, ST_Buffer(ms.geom, {self.buffer_size.value})))).mean), 0) AS {self.label_prefix}{self.statistic_type}_{str(self.buffer_size.value).zfill(4)}
+                FROM
+                    "public"."jgg_centroid_adjusted" ms
+                LEFT JOIN
+                    "public".ndvi_statistics ns
+                ON
+                    ST_Intersects(ns.rast, ST_Buffer(ms.geom, {self.buffer_size.value}))
+                AND
+                    ns."year" = {self.year}
+                AND
+                    ns.statistic = 'median'
+                GROUP BY
+                    ms.tot_reg_cd, ms.geom;
+                """
+            )
+
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
+class NdviStatisticMeanCalculator(AbstractNdviStatisticCalculator):
+    @property
+    def statistic_type(self) -> Literal["mean", "median", "min", "max", "8mdn"]:
+        return "mean"
+
+
+class NdviStatisticMedianCalculator(AbstractNdviStatisticCalculator):
+    @property
+    def statistic_type(self) -> Literal["mean", "median", "min", "max", "8mdn"]:
+        return "median"
+
+
+class NdviStatisticMinCalculator(AbstractNdviStatisticCalculator):
+    @property
+    def statistic_type(self) -> Literal["mean", "median", "min", "max", "8mdn"]:
+        return "min"
+
+
+class NdviStatisticMaxCalculator(AbstractNdviStatisticCalculator):
+    @property
+    def statistic_type(self) -> Literal["mean", "median", "min", "max", "8mdn"]:
+        return "max"
+
+
+class NdviStatistic8mdnCalculator(AbstractNdviStatisticCalculator):
+    @property
+    def statistic_type(self) -> Literal["mean", "median", "min", "max", "8mdn"]:
+        return "8mdn"
+
+
+class JggCentroidRelativeDemDsmCalculator:
+    """Calculator for relative DEM/DSM statistics using donut approach.
+
+    This is a precomputed table in the database.
+
+    To learn more about the donut approach, you can view the files in the `scripts` folder.
+
+    This was precomputed because it takes a long time to compute the statistics for each point.
+    """
+
+    def __init__(
+        self,
+        table_type: Literal["dem", "dsm"],
+        inner_buffer: Literal[1000, 5000],
+    ):
+        self.table_type = table_type
+        self.inner_buffer = inner_buffer
+
+    def calculate(self) -> pd.DataFrame:
+        sql = text(
+            f"""
+            SELECT * FROM jgg_centroid_relative_{self.table_type}_{self.inner_buffer}_donut
+            """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
+class LanduseCalculator(PointAbstractCalculator):
+    def __init__(self, buffer_size: BufferSize, year: int):
+        super().__init__(year)
+        self.buffer_size = buffer_size
+
+    @property
+    def table_name(self) -> str:
+        """Returns the appropriate table name based on the year."""
+        if self.year == 2020:
+            return "landuse_v004_2020_simplified"
+        else:
+            return f"landuse_v002_{self.year}"
+
+    @property
+    def label_prefix(self) -> str:
+        return "LS"
+
+    @property
+    def valid_years(self) -> list[int]:
+        """Return list of valid years for landuse data."""
+        return [2000, 2005, 2010, 2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the landuse calculation based on buffer zones.
+
+        This calculates the ratio of each landuse type's area within the buffer to the
+        total buffer area for all specified landuse codes. Uses a loop with tqdm for
+        progress tracking.
+
+        Returns:
+            DataFrame containing calculation results with landuse variables
+        """
+
+        self.validate_year()
+        buffer_value = self.buffer_size.value
+
+        # List of landuse codes to process
+        codes = [110, 120, 130, 140, 150, 160, 200, 310, 320, 330, 400, 500, 600, 710]
+
+        # Get the list of all jgg centroids first
+        sql = text("SELECT tot_reg_cd FROM jgg_centroid_adjusted ORDER BY tot_reg_cd")
+        try:
+            result = conn.execute(sql)
+            tot_reg_cd_rows = result.all()
+        except Exception as e:
+            logger.error(f"Error fetching tot_reg_cd in {self.__class__.__name__}: {e}")
+            raise
+
+        # Process each code separately with progress tracking
+        all_dataframes = []
+
+        for code in tqdm(codes, desc="Processing landuse codes"):
+            varname = f"{self.label_prefix}{code}_{str(buffer_value).zfill(4)}"
+
+            sql = text(
+                f"""
+                SELECT
+                    a_buffered.tot_reg_cd,
+                    COALESCE(
+                        SUM(
+                            ST_Area(ST_Intersection(a_buffered.geom_{buffer_value}, b.geometry))
+                        ) / ({buffer_value * buffer_value * 3.14159265358979323846}),
+                        0
+                    ) AS "{varname}"
+                FROM
+                    jgg_centroid_adjusted_buffered AS a_buffered
+                LEFT JOIN
+                    "{self.table_name}" AS b
+                ON
+                    ST_Intersects(a_buffered.geom_{buffer_value}, b.geometry)
+                    AND b.code = {code}
+                GROUP BY
+                    a_buffered.tot_reg_cd
+                ORDER BY
+                    a_buffered.tot_reg_cd;
+                """
+            )
+
+            try:
+                result = conn.execute(sql)
+                rows = result.all()
+                df = pd.DataFrame([dict(row._mapping) for row in rows])
+                all_dataframes.append(df)
+            except Exception as e:
+                logger.error(f"Error in {self.__class__.__name__} for code {code}: {e}")
+                raise
+
+        # Merge all dataframes into one
+        if all_dataframes:
+            return merge_dataframes_by_id(all_dataframes, id_column="tot_reg_cd")
+        else:
+            return pd.DataFrame()
 
 
 if __name__ == "__main__":
-    for buffer_size in BufferSize:
-        for year in [2000, 2005, 2010, 2015, 2020]:
-            df = HouseTypeCountCalculator(buffer_size, year).calculate()
-            df.to_csv(f"ho_gb_{buffer_size.value}_{year}.csv")
-
-            df = BusinessEmployeeCountCalculator(buffer_size, year).calculate()
-            df.to_csv(f"bem_{buffer_size.value}_{year}.csv")
-
-            df = BusinessRegistrationCountCalculator(buffer_size, year).calculate()
-            df.to_csv(f"bnu_{buffer_size.value}_{year}.csv")
+    calculator = LanduseCalculator(buffer_size=BufferSize.VERY_SMALL, year=2010)
+    df = calculator.calculate()
+    print(df)
