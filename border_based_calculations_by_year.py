@@ -1068,7 +1068,7 @@ class RasterEmissionCalculator(BorderAbstractCalculator):
 # jgg       about 7m
 if __name__ == "__main__":
     for border_type in BorderType:
-        for year in [2010, 2015, 2019]:
+        for year in [2001, 2005, 2010, 2015, 2019]:
             pdt(f"{border_type.value} {year}")
             df = RasterEmissionCalculator(border_type, year).calculate()
             print(df.shape)
