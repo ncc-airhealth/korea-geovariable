@@ -269,6 +269,142 @@ class RailStationCountCalculator(JggCentroidBufferCountCalculator):
         super().validate_year()
 
 
+class ClinicCountCalculator(PointAbstractCalculator):
+    """Calculator for clinic counts within a buffer."""
+
+    def __init__(self, buffer_size: BufferSize, year: int):
+        """
+        Initialize calculator with buffer size and year.
+
+        Args:
+            buffer_size: Size of the buffer zone
+            year: Reference year for the calculation
+        """
+        super().__init__(year)
+        self.buffer_size = buffer_size
+
+    @property
+    def table_name(self) -> str:
+        return "clinics"
+
+    @property
+    def label_prefix(self) -> str:
+        return "C_Clinic"
+
+    @property
+    def valid_years(self) -> list[int]:
+        """Return list of valid years for clinic data."""
+        # Assuming these are the relevant years, adjust if needed
+        return [2000, 2005, 2010, 2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the point-based calculation for clinic counts based on existence in the given year.
+
+        Returns:
+            DataFrame containing calculation results
+        """
+        self.validate_year()
+        column_name = (
+            f"{self.label_prefix}_{self.year}_{str(self.buffer_size.value).zfill(4)}"
+        )
+
+        # Modified SQL to check if the clinic existed in the given year
+        sql = text(
+            f"""
+            SELECT
+                jb.tot_reg_cd,
+                COUNT(t.*) as "{column_name}"
+            FROM
+                public.jgg_centroid_adjusted_buffered jb
+                LEFT JOIN public.{self.table_name} t
+                    ON ST_Within(t.geom, jb.geom_{self.buffer_size.value})
+                    AND CAST(SUBSTRING(t.date, 1, 4) AS INTEGER) <= {self.year} -- Check opening year
+                    AND (t.date_c IS NULL OR CAST(SUBSTRING(t.date_c, 1, 4) AS INTEGER) >= {self.year}) -- Check closing year
+            GROUP BY
+                jb.tot_reg_cd
+            ORDER BY
+                jb.tot_reg_cd;
+            """
+        )
+
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
+class HospitalCountCalculator(PointAbstractCalculator):
+    """Calculator for hospital counts within a buffer."""
+
+    def __init__(self, buffer_size: BufferSize, year: int):
+        """
+        Initialize calculator with buffer size and year.
+
+        Args:
+            buffer_size: Size of the buffer zone
+            year: Reference year for the calculation
+        """
+        super().__init__(year)
+        self.buffer_size = buffer_size
+
+    @property
+    def table_name(self) -> str:
+        return "hospitals"
+
+    @property
+    def label_prefix(self) -> str:
+        return "C_Hospital"
+
+    @property
+    def valid_years(self) -> list[int]:
+        """Return list of valid years for hospital data."""
+        # Assuming these are the relevant years, adjust if needed
+        return [2000, 2005, 2010, 2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the point-based calculation for hospital counts based on existence in the given year.
+
+        Returns:
+            DataFrame containing calculation results
+        """
+        self.validate_year()
+        column_name = (
+            f"{self.label_prefix}_{self.year}_{str(self.buffer_size.value).zfill(4)}"
+        )
+
+        # Modified SQL to check if the hospital existed in the given year
+        sql = text(
+            f"""
+            SELECT
+                jb.tot_reg_cd,
+                COUNT(t.*) as "{column_name}"
+            FROM
+                public.jgg_centroid_adjusted_buffered jb
+                LEFT JOIN public.{self.table_name} t
+                    ON ST_Within(t.geom, jb.geom_{self.buffer_size.value})
+                    AND CAST(SUBSTRING(t.date, 1, 4) AS INTEGER) <= {self.year} -- Check opening year
+                    AND (t.date_c IS NULL OR CAST(SUBSTRING(t.date_c, 1, 4) AS INTEGER) >= {self.year}) -- Check closing year
+            GROUP BY
+                jb.tot_reg_cd
+            ORDER BY
+                jb.tot_reg_cd;
+            """
+        )
+
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
 class JggCentroidShortestDistanceCalculator(PointAbstractCalculator):
     """Calculator for shortest distance to the nearest point."""
 
@@ -531,6 +667,116 @@ class RiverDistanceCalculator(JggCentroidShortestDistanceCalculator):
     @property
     def valid_years(self) -> list[int]:
         return [2000, 2005, 2010, 2015, 2020]
+
+
+class ClinicDistanceCalculator(JggCentroidShortestDistanceCalculator):
+    """Calculator for shortest distance to the nearest clinic existing in a given year."""
+
+    @property
+    def table_name(self) -> str:
+        return "clinics"
+
+    @property
+    def label_prefix(self) -> str:
+        return "D_Clinic"
+
+    @property
+    def valid_years(self) -> list[int]:
+        """Return list of valid years for clinic data."""
+        # Assuming these are the relevant years, adjust if needed
+        return [2000, 2005, 2010, 2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the point-based calculation for shortest distance to the nearest clinic.
+
+        Returns:
+            DataFrame containing calculation results
+        """
+        self.validate_year()
+        column_name = f"{self.label_prefix}_{self.year}"
+
+        # Modified SQL to find the minimum distance to clinics existing in the given year
+        sql = text(
+            f"""
+            SELECT
+                src.tot_reg_cd,
+                min(ST_Distance(src.geom, dst.geom)) AS "{column_name}"
+            FROM
+                public.jgg_centroid_adjusted AS src
+                CROSS JOIN public.{self.table_name} AS dst -- Use CROSS JOIN and filter in WHERE
+            WHERE
+                CAST(SUBSTRING(dst.date, 1, 4) AS INTEGER) <= {self.year}
+                AND (dst.date_c IS NULL OR CAST(SUBSTRING(dst.date_c, 1, 4) AS INTEGER) >= {self.year})
+            GROUP BY
+                src.tot_reg_cd
+            ORDER BY
+                src.tot_reg_cd;
+            """
+        )
+
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+
+class HospitalDistanceCalculator(JggCentroidShortestDistanceCalculator):
+    """Calculator for shortest distance to the nearest hospital existing in a given year."""
+
+    @property
+    def table_name(self) -> str:
+        return "hospitals"
+
+    @property
+    def label_prefix(self) -> str:
+        return "D_Hospital"
+
+    @property
+    def valid_years(self) -> list[int]:
+        """Return list of valid years for hospital data."""
+        # Assuming these are the relevant years, adjust if needed
+        return [2000, 2005, 2010, 2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the point-based calculation for shortest distance to the nearest hospital.
+
+        Returns:
+            DataFrame containing calculation results
+        """
+        self.validate_year()
+        column_name = f"{self.label_prefix}_{self.year}"
+
+        # Modified SQL to find the minimum distance to hospitals existing in the given year
+        sql = text(
+            f"""
+            SELECT
+                src.tot_reg_cd,
+                min(ST_Distance(src.geom, dst.geom)) AS "{column_name}"
+            FROM
+                public.jgg_centroid_adjusted AS src
+                CROSS JOIN public.{self.table_name} AS dst -- Use CROSS JOIN and filter in WHERE
+            WHERE
+                CAST(SUBSTRING(dst.date, 1, 4) AS INTEGER) <= {self.year}
+                AND (dst.date_c IS NULL OR CAST(SUBSTRING(dst.date_c, 1, 4) AS INTEGER) >= {self.year})
+            GROUP BY
+                src.tot_reg_cd
+            ORDER BY
+                src.tot_reg_cd;
+            """
+        )
+
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
 
 
 class CarMeanCalculator(PointAbstractCalculator):
@@ -1706,6 +1952,9 @@ class LanduseCalculator(PointAbstractCalculator):
 
 
 if __name__ == "__main__":
-    calculator = LanduseCalculator(buffer_size=BufferSize.VERY_SMALL, year=2010)
+    # Example usage updated to include the year
+    # calculator = HospitalCountCalculator(buffer_size=BufferSize.VERY_SMALL, year=2020)
+    # Example usage for distance calculator
+    calculator = HospitalDistanceCalculator(year=2020)
     df = calculator.calculate()
     print(df)
