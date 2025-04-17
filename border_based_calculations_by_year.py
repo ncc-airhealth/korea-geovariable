@@ -979,6 +979,138 @@ class RasterEmissionCalculator(BorderAbstractCalculator):
             raise
 
 
+class ClinicBorderCalculator(BorderAbstractCalculator):
+    """Calculator for clinic count variable within borders."""
+
+    def __init__(self, border_type: BorderType, year: int):
+        # Year is needed for border table selection, but not for clinic data filtering
+        super().__init__(border_type, year)
+
+    @property
+    def table_name(self) -> str:
+        return "clinics"
+
+    @property
+    def label_prefix(self) -> str:
+        return "clinic_count"
+
+    @property
+    def valid_years(self) -> list[int]:
+        # Clinic data itself isn't year-specific, but border tables are.
+        # Return the years valid for border tables.
+        return [2000, 2005, 2010, 2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the clinic count calculation within borders.
+
+        Returns:
+            DataFrame containing calculation results with clinic count variable.
+        """
+        # Year validation is for the border table year
+        self.validate_year()
+        border_tbl = self.border_tbl
+        border_cd = self.border_cd_col
+        calculation_year = self.year  # Use the year for filtering clinics
+
+        sql = text(
+            f"""
+            SELECT
+                b.{border_cd} AS {border_cd},
+                COUNT(c.*) AS {self.label_prefix}
+            FROM
+                {border_tbl} AS b
+                LEFT JOIN {self.table_name} AS c
+                    ON ST_Contains(b.geom, c.geom)
+                    AND c.date <= '{calculation_year}-12-31' -- Opened on or before the end of the year
+                    AND (c.date_c IS NULL OR c.date_c >= '{calculation_year}-01-01') -- Not closed before the start of the year
+                    -- AND c.operation = 1 -- Keep or remove this? Depends on data quality. Let's keep it for now.
+            GROUP BY
+                b.{border_cd}
+            ORDER BY
+                b.{border_cd};
+            """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+    def validate_year(self) -> None:
+        """Validate border year."""
+        # Use base class validation which checks against valid_years
+        super().validate_year()
+
+
+class HospitalBorderCalculator(BorderAbstractCalculator):
+    """Calculator for hospital count variable within borders."""
+
+    def __init__(self, border_type: BorderType, year: int):
+        # Year is needed for border table selection, but not for hospital data filtering
+        super().__init__(border_type, year)
+
+    @property
+    def table_name(self) -> str:
+        return "hospitals"
+
+    @property
+    def label_prefix(self) -> str:
+        return "hospital_count"
+
+    @property
+    def valid_years(self) -> list[int]:
+        # Hospital data itself isn't year-specific, but border tables are.
+        # Return the years valid for border tables.
+        return [2000, 2005, 2010, 2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the hospital count calculation within borders.
+
+        Returns:
+            DataFrame containing calculation results with hospital count variable.
+        """
+        # Year validation is for the border table year
+        self.validate_year()
+        border_tbl = self.border_tbl
+        border_cd = self.border_cd_col
+        calculation_year = self.year  # Use the year for filtering hospitals
+
+        sql = text(
+            f"""
+            SELECT
+                b.{border_cd} AS {border_cd},
+                COUNT(h.*) AS {self.label_prefix}
+            FROM
+                {border_tbl} AS b
+                LEFT JOIN {self.table_name} AS h
+                    ON ST_Contains(b.geom, h.geom)
+                    AND h.date <= '{calculation_year}-12-31' -- Opened on or before the end of the year
+                    AND (h.date_c IS NULL OR h.date_c >= '{calculation_year}-01-01') -- Not closed before the start of the year
+                     -- AND h.operation = 1 -- Keep or remove this? Depends on data quality. Let's keep it for now.
+            GROUP BY
+                b.{border_cd}
+            ORDER BY
+                b.{border_cd};
+            """
+        )
+        try:
+            result = conn.execute(sql)
+            rows = result.all()
+            return pd.DataFrame([dict(row._mapping) for row in rows])
+        except Exception as e:
+            logger.error(f"Error in {self.__class__.__name__}: {e}")
+            raise
+
+    def validate_year(self) -> None:
+        """Validate border year."""
+        # Use base class validation which checks against valid_years
+        super().validate_year()
+
+
 # test DB connection
 # if __name__ == "__main__":
 #     pdt(engine)
@@ -1093,8 +1225,8 @@ class RasterEmissionCalculator(BorderAbstractCalculator):
 # jgg       about 7m
 if __name__ == "__main__":
     for border_type in BorderType:
-        for year in [2001, 2005, 2010, 2015, 2019]:
+        for year in [2000, 2005, 2010, 2015, 2020]:
             pdt(f"{border_type.value} {year}")
-            df = RasterEmissionCalculator(border_type, year).calculate()
+            df = HospitalBorderCalculator(border_type, year).calculate()
             print(df.shape)
             print(df.sample(5))
