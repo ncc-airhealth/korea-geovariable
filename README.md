@@ -50,6 +50,12 @@ uv sync
 # Set up environment variables
 cp .env.template .env
 # Edit .env with your configuration
+
+# Run the application
+redis-server
+celery -A celery_app worker --loglevel=info
+celery -A celery_app flower --loglevel=debug
+uvicorn main:app --reload
 ```
 
 ### Database Setup
