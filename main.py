@@ -1,692 +1,463 @@
-import pandas as pd
-from fastapi import FastAPI, HTTPException
+from celery.result import AsyncResult
+from fastapi import FastAPI
 
+import tasks  # Import all tasks
 from border_based_calculations_by_year import (
-    AirportDistanceCalculator,
     BorderType,
-    CarRegistrationCalculator,
-    ClinicBorderCalculator,
-    CoastlineDistanceCalculator,
-    EmissionCalculator,
-    HospitalBorderCalculator,
-    LanduseAreaCalculator,
-    MilitaryDemarcationLineDistanceCalculator,
-    NdviCalculator,
-    PortDistanceCalculator,
-    RailCalculator,
-    RasterEmissionCalculator,
-    RiverCalculator,
-    RoadCalculator,
-    TopographicModelCalculator,
 )
+from celery_app import celery_app  # Import celery app instance
 from point_based_calculations import (
-    AbstractMrLengthCalculator,
-    AbstractMrLengthLaneCalculator,
-    AbstractMrLengthLaneWidthCalculator,
-    AbstractNdviStatisticCalculator,
     BufferSize,
-    BusinessEmployeeCountCalculator,
-    BusinessRegistrationCountCalculator,
-    BusStopCountCalculator,
-    BusStopDistanceCalculator,
-    CarMeanCalculator,
-    ClinicCountCalculator,
-    ClinicDistanceCalculator,
-    DemRasterValueCalculator,
-    DsmRasterValueCalculator,
-    EmissionRasterValueCalculator,
-    EmissionVectorBasedCalculator,
-    HospitalCountCalculator,
-    HouseTypeCountCalculator,
-    JggCentroidBufferCountCalculator,
-    JggCentroidRasterValueCalculator,
-    JggCentroidRelativeDemDsmCalculator,
-    JggCentroidShortestDistanceCalculator,
-    LanduseCalculator,
-    MdlDistanceCalculator,
-    Mr1DistanceCalculator,
-    Mr1LengthCalculator,
-    Mr1LengthLaneCalculator,
-    Mr1LengthLaneWidthCalculator,
-    Mr2DistanceCalculator,
-    Mr2LengthCalculator,
-    Mr2LengthLaneCalculator,
-    Mr2LengthLaneWidthCalculator,
-    NdviStatistic8mdnCalculator,
-    NdviStatisticMaxCalculator,
-    NdviStatisticMeanCalculator,
-    NdviStatisticMedianCalculator,
-    NdviStatisticMinCalculator,
-    PopulationCalculator,
-    RailDistanceCalculator,
-    RailStationCountCalculator,
-    RailStationDistanceCalculator,
-    RiverDistanceCalculator,
-    RoadDistanceCalculator,
-    RoadLengthCalculator,
-    RoadLengthLaneCalculator,
-    RoadLengthLaneWidthCalculator,
-)
-from point_based_calculations import (
-    AirportDistanceCalculator as PointAirportDistanceCalculator,
-)
-from point_based_calculations import (
-    CoastlineDistanceCalculator as PointCoastlineDistanceCalculator,
-)
-from point_based_calculations import (
-    HospitalDistanceCalculator as PointHospitalDistanceCalculator,
-)
-from point_based_calculations import (
-    PortDistanceCalculator as PointPortDistanceCalculator,
 )
 
 app = FastAPI()
 
 
-def df_to_json(df: pd.DataFrame):
-    return df.to_dict(orient="records")
+# --- Status Check Endpoint ---
+@app.get("/job_status/{task_id}")
+def get_job_status(task_id: str):
+    """Check the status of a submitted job."""
+    task_result = AsyncResult(task_id, app=celery_app)
+
+    response = {"task_id": task_id, "status": task_result.status, "result": None}
+
+    if task_result.successful():
+        response["result"] = task_result.get()
+    elif task_result.failed():
+        # Access the custom error info stored in meta
+        try:
+            # Celery stores traceback/exception info differently depending on version/config
+            # Try accessing the meta info we set
+            error_info = (
+                task_result.info
+                if isinstance(task_result.info, dict)
+                else str(task_result.info)
+            )
+            response["result"] = error_info
+        except Exception:
+            response["result"] = "Failed to retrieve error details."
+    # Handle other states like PENDING, STARTED, RETRY if needed
+
+    return response
 
 
 # --- Border-based endpoints ---
 @app.get("/border/river/")
 def border_river(border_type: BorderType, year: int):
-    try:
-        calc = RiverCalculator(border_type, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_border_river_task.delay(border_type.value, year)
+    return {"task_id": task.id}
 
 
 @app.get("/border/emission/")
 def border_emission(border_type: BorderType, year: int):
-    try:
-        calc = EmissionCalculator(border_type, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_border_emission_task.delay(border_type.value, year)
+    return {"task_id": task.id}
 
 
 @app.get("/border/car_registration/")
 def border_car_registration(border_type: BorderType, year: int):
-    try:
-        calc = CarRegistrationCalculator(border_type, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_border_car_registration_task.delay(border_type.value, year)
+    return {"task_id": task.id}
 
 
 @app.get("/border/landuse_area/")
 def border_landuse_area(border_type: BorderType, year: int):
-    try:
-        calc = LanduseAreaCalculator(border_type, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_border_landuse_area_task.delay(border_type.value, year)
+    return {"task_id": task.id}
 
 
 @app.get("/border/coastline_distance/")
 def border_coastline_distance(border_type: BorderType, year: int):
-    try:
-        calc = CoastlineDistanceCalculator(border_type, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_border_coastline_distance_task.delay(border_type.value, year)
+    return {"task_id": task.id}
 
 
 @app.get("/border/ndvi/")
 def border_ndvi(border_type: BorderType, year: int):
-    try:
-        calc = NdviCalculator(border_type, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_border_ndvi_task.delay(border_type.value, year)
+    return {"task_id": task.id}
 
 
 @app.get("/border/airport_distance/")
 def border_airport_distance(border_type: BorderType, year: int):
-    try:
-        calc = AirportDistanceCalculator(border_type, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_border_airport_distance_task.delay(border_type.value, year)
+    return {"task_id": task.id}
 
 
 @app.get("/border/mdl_distance/")
 def border_mdl_distance(border_type: BorderType, year: int):
-    try:
-        calc = MilitaryDemarcationLineDistanceCalculator(border_type, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_border_mdl_distance_task.delay(border_type.value, year)
+    return {"task_id": task.id}
 
 
 @app.get("/border/port_distance/")
 def border_port_distance(border_type: BorderType, year: int):
-    try:
-        calc = PortDistanceCalculator(border_type, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_border_port_distance_task.delay(border_type.value, year)
+    return {"task_id": task.id}
 
 
 @app.get("/border/rail/")
 def border_rail(border_type: BorderType, year: int):
-    try:
-        calc = RailCalculator(border_type, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_border_rail_task.delay(border_type.value, year)
+    return {"task_id": task.id}
 
 
 @app.get("/border/road/")
 def border_road(border_type: BorderType, year: int):
-    try:
-        calc = RoadCalculator(border_type, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_border_road_task.delay(border_type.value, year)
+    return {"task_id": task.id}
 
 
 @app.get("/border/topographic_model/")
 def border_topographic_model(border_type: BorderType, year: int):
-    try:
-        calc = TopographicModelCalculator(border_type, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_border_topographic_model_task.delay(border_type.value, year)
+    return {"task_id": task.id}
 
 
 @app.get("/border/raster_emission/")
 def border_raster_emission(border_type: BorderType, year: int):
-    try:
-        calc = RasterEmissionCalculator(border_type, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_border_raster_emission_task.delay(border_type.value, year)
+    return {"task_id": task.id}
 
 
 @app.get("/border/clinic_count/")
 def border_clinic_count(border_type: BorderType, year: int):
-    try:
-        calc = ClinicBorderCalculator(border_type, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_border_clinic_count_task.delay(border_type.value, year)
+    return {"task_id": task.id}
 
 
 @app.get("/border/hospital_count/")
 def border_hospital_count(border_type: BorderType, year: int):
-    try:
-        calc = HospitalBorderCalculator(border_type, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_border_hospital_count_task.delay(border_type.value, year)
+    return {"task_id": task.id}
 
 
 # --- Point-based endpoints ---
 @app.get("/point/clinic_count/")
 def point_clinic_count(buffer_size: BufferSize, year: int):
-    try:
-        calc = ClinicCountCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_clinic_count_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
 
 
 @app.get("/point/hospital_count/")
 def point_hospital_count(buffer_size: BufferSize, year: int):
-    try:
-        calc = HospitalCountCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_hospital_count_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
 
 
 @app.get("/point/business_registration_count/")
 def point_business_registration_count(buffer_size: BufferSize, year: int):
-    try:
-        calc = BusinessRegistrationCountCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_business_registration_count_task.delay(
+        buffer_size.value, year
+    )
+    return {"task_id": task.id}
 
 
 @app.get("/point/business_employee_count/")
 def point_business_employee_count(buffer_size: BufferSize, year: int):
-    try:
-        calc = BusinessEmployeeCountCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_business_employee_count_task.delay(
+        buffer_size.value, year
+    )
+    return {"task_id": task.id}
 
 
 @app.get("/point/house_type_count/")
 def point_house_type_count(buffer_size: BufferSize, year: int):
-    try:
-        calc = HouseTypeCountCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_house_type_count_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
 
 
 @app.get("/point/landuse/")
 def point_landuse(buffer_size: BufferSize, year: int):
-    try:
-        calc = LanduseCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_landuse_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
 
 
 # --- Additional Point-based endpoints ---
 @app.get("/point/jgg_centroid_raster_value/")
 def point_jgg_centroid_raster_value(buffer_size: BufferSize, year: int):
-    try:
-        calc = JggCentroidRasterValueCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_jgg_centroid_raster_value_task.delay(
+        buffer_size.value, year
+    )
+    return {"task_id": task.id}
+
 
 @app.get("/point/dem_raster_value/")
 def point_dem_raster_value(buffer_size: BufferSize, year: int):
-    try:
-        calc = DemRasterValueCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_dem_raster_value_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/dsm_raster_value/")
 def point_dsm_raster_value(buffer_size: BufferSize, year: int):
-    try:
-        calc = DsmRasterValueCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_dsm_raster_value_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/jgg_centroid_buffer_count/")
 def point_jgg_centroid_buffer_count(buffer_size: BufferSize, year: int):
-    try:
-        calc = JggCentroidBufferCountCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_jgg_centroid_buffer_count_task.delay(
+        buffer_size.value, year
+    )
+    return {"task_id": task.id}
+
 
 @app.get("/point/bus_stop_count/")
 def point_bus_stop_count(buffer_size: BufferSize, year: int):
-    try:
-        calc = BusStopCountCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_bus_stop_count_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/rail_station_count/")
 def point_rail_station_count(buffer_size: BufferSize, year: int):
-    try:
-        calc = RailStationCountCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_rail_station_count_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/jgg_centroid_shortest_distance/")
 def point_jgg_centroid_shortest_distance(buffer_size: BufferSize, year: int):
-    try:
-        calc = JggCentroidShortestDistanceCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_jgg_centroid_shortest_distance_task.delay(
+        buffer_size.value, year
+    )
+    return {"task_id": task.id}
+
 
 @app.get("/point/bus_stop_distance/")
 def point_bus_stop_distance(buffer_size: BufferSize, year: int):
-    try:
-        calc = BusStopDistanceCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_bus_stop_distance_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/airport_distance/")
 def point_airport_distance(buffer_size: BufferSize, year: int):
-    try:
-        calc = PointAirportDistanceCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_airport_distance_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/rail_distance/")
 def point_rail_distance(buffer_size: BufferSize, year: int):
-    try:
-        calc = RailDistanceCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_rail_distance_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/rail_station_distance/")
 def point_rail_station_distance(buffer_size: BufferSize, year: int):
-    try:
-        calc = RailStationDistanceCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_rail_station_distance_task.delay(
+        buffer_size.value, year
+    )
+    return {"task_id": task.id}
+
 
 @app.get("/point/coastline_distance/")
 def point_coastline_distance(buffer_size: BufferSize, year: int):
-    try:
-        calc = PointCoastlineDistanceCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_coastline_distance_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/mdl_distance/")
 def point_mdl_distance(buffer_size: BufferSize, year: int):
-    try:
-        calc = MdlDistanceCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_mdl_distance_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/port_distance/")
 def point_port_distance(buffer_size: BufferSize, year: int):
-    try:
-        calc = PointPortDistanceCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_port_distance_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/mr1_distance/")
 def point_mr1_distance(buffer_size: BufferSize, year: int):
-    try:
-        calc = Mr1DistanceCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_mr1_distance_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/mr2_distance/")
 def point_mr2_distance(buffer_size: BufferSize, year: int):
-    try:
-        calc = Mr2DistanceCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_mr2_distance_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/road_distance/")
 def point_road_distance(buffer_size: BufferSize, year: int):
-    try:
-        calc = RoadDistanceCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_road_distance_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/river_distance/")
 def point_river_distance(buffer_size: BufferSize, year: int):
-    try:
-        calc = RiverDistanceCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_river_distance_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/clinic_distance/")
 def point_clinic_distance(buffer_size: BufferSize, year: int):
-    try:
-        calc = ClinicDistanceCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_clinic_distance_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/hospital_distance/")
 def point_hospital_distance(buffer_size: BufferSize, year: int):
-    try:
-        calc = PointHospitalDistanceCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_hospital_distance_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/car_mean/")
 def point_car_mean(buffer_size: BufferSize, year: int):
-    try:
-        calc = CarMeanCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_car_mean_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/emission_vector_based/")
 def point_emission_vector_based(buffer_size: BufferSize, year: int):
-    try:
-        calc = EmissionVectorBasedCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_emission_vector_based_task.delay(
+        buffer_size.value, year
+    )
+    return {"task_id": task.id}
+
 
 @app.get("/point/emission_raster_value/")
 def point_emission_raster_value(buffer_size: BufferSize, year: int):
-    try:
-        calc = EmissionRasterValueCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_emission_raster_value_task.delay(
+        buffer_size.value, year
+    )
+    return {"task_id": task.id}
+
 
 @app.get("/point/road_length/")
 def point_road_length(buffer_size: BufferSize, year: int):
-    try:
-        calc = RoadLengthCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_road_length_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/road_length_lane/")
 def point_road_length_lane(buffer_size: BufferSize, year: int):
-    try:
-        calc = RoadLengthLaneCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_road_length_lane_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/road_length_lane_width/")
 def point_road_length_lane_width(buffer_size: BufferSize, year: int):
-    try:
-        calc = RoadLengthLaneWidthCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_road_length_lane_width_task.delay(
+        buffer_size.value, year
+    )
+    return {"task_id": task.id}
+
 
 @app.get("/point/abstract_mr_length/")
 def point_abstract_mr_length(buffer_size: BufferSize, year: int):
-    try:
-        calc = AbstractMrLengthCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_abstract_mr_length_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/mr1_length/")
 def point_mr1_length(buffer_size: BufferSize, year: int):
-    try:
-        calc = Mr1LengthCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_mr1_length_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/mr2_length/")
 def point_mr2_length(buffer_size: BufferSize, year: int):
-    try:
-        calc = Mr2LengthCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_mr2_length_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/abstract_mr_length_lane/")
 def point_abstract_mr_length_lane(buffer_size: BufferSize, year: int):
-    try:
-        calc = AbstractMrLengthLaneCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_abstract_mr_length_lane_task.delay(
+        buffer_size.value, year
+    )
+    return {"task_id": task.id}
+
 
 @app.get("/point/mr1_length_lane/")
 def point_mr1_length_lane(buffer_size: BufferSize, year: int):
-    try:
-        calc = Mr1LengthLaneCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_mr1_length_lane_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/mr2_length_lane/")
 def point_mr2_length_lane(buffer_size: BufferSize, year: int):
-    try:
-        calc = Mr2LengthLaneCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_mr2_length_lane_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/abstract_mr_length_lane_width/")
 def point_abstract_mr_length_lane_width(buffer_size: BufferSize, year: int):
-    try:
-        calc = AbstractMrLengthLaneWidthCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_abstract_mr_length_lane_width_task.delay(
+        buffer_size.value, year
+    )
+    return {"task_id": task.id}
+
 
 @app.get("/point/mr1_length_lane_width/")
 def point_mr1_length_lane_width(buffer_size: BufferSize, year: int):
-    try:
-        calc = Mr1LengthLaneWidthCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_mr1_length_lane_width_task.delay(
+        buffer_size.value, year
+    )
+    return {"task_id": task.id}
+
 
 @app.get("/point/mr2_length_lane_width/")
 def point_mr2_length_lane_width(buffer_size: BufferSize, year: int):
-    try:
-        calc = Mr2LengthLaneWidthCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_mr2_length_lane_width_task.delay(
+        buffer_size.value, year
+    )
+    return {"task_id": task.id}
+
 
 @app.get("/point/population/")
 def point_population(buffer_size: BufferSize, year: int):
-    try:
-        calc = PopulationCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_population_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/abstract_ndvi_statistic/")
 def point_abstract_ndvi_statistic(buffer_size: BufferSize, year: int):
-    try:
-        calc = AbstractNdviStatisticCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_abstract_ndvi_statistic_task.delay(
+        buffer_size.value, year
+    )
+    return {"task_id": task.id}
+
 
 @app.get("/point/ndvi_statistic_mean/")
 def point_ndvi_statistic_mean(buffer_size: BufferSize, year: int):
-    try:
-        calc = NdviStatisticMeanCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_ndvi_statistic_mean_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/ndvi_statistic_median/")
 def point_ndvi_statistic_median(buffer_size: BufferSize, year: int):
-    try:
-        calc = NdviStatisticMedianCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_ndvi_statistic_median_task.delay(
+        buffer_size.value, year
+    )
+    return {"task_id": task.id}
+
 
 @app.get("/point/ndvi_statistic_min/")
 def point_ndvi_statistic_min(buffer_size: BufferSize, year: int):
-    try:
-        calc = NdviStatisticMinCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_ndvi_statistic_min_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/ndvi_statistic_max/")
 def point_ndvi_statistic_max(buffer_size: BufferSize, year: int):
-    try:
-        calc = NdviStatisticMaxCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_ndvi_statistic_max_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/ndvi_statistic_8mdn/")
 def point_ndvi_statistic_8mdn(buffer_size: BufferSize, year: int):
-    try:
-        calc = NdviStatistic8mdnCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    task = tasks.calculate_point_ndvi_statistic_8mdn_task.delay(buffer_size.value, year)
+    return {"task_id": task.id}
+
 
 @app.get("/point/jgg_centroid_relative_dem_dsm/")
 def point_jgg_centroid_relative_dem_dsm(buffer_size: BufferSize, year: int):
-    try:
-        calc = JggCentroidRelativeDemDsmCalculator(buffer_size, year)
-        df = calc.calculate()
-        return df_to_json(df)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
+    task = tasks.calculate_point_jgg_centroid_relative_dem_dsm_task.delay(
+        buffer_size.value, year
+    )
+    return {"task_id": task.id}
 
 
 @app.get("/")
