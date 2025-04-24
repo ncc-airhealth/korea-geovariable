@@ -96,3 +96,4 @@ out/jgg_centroid/traffic_2015.csv
 out/jgg_centroid/relative_dem
 out
 landuse_dump
+dump.rdb
