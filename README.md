@@ -27,8 +27,9 @@ Korea Geovariable is a comprehensive library for calculating various geospatial 
 ### Prerequisites
 
 - Python 3.11 or later
-- PostgreSQL 14 or later with PostGIS extension
+- PostgreSQL 15 or later with PostGIS extension
 - `uv` package manager
+- `redis` server: use docker or run `redis-server` in macOS
 
 ### Quick Start
 
