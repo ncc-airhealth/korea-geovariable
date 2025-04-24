@@ -1022,9 +1022,9 @@ class ClinicBorderCalculator(BorderAbstractCalculator):
                 {border_tbl} AS b
                 LEFT JOIN {self.table_name} AS c
                     ON ST_Contains(b.geom, c.geom)
-                    AND c.date <= '{calculation_year}-12-31' -- Opened on or before the end of the year
-                    AND (c.date_c IS NULL OR c.date_c >= '{calculation_year}-01-01') -- Not closed before the start of the year
-                    -- AND c.operation = 1 -- Keep or remove this? Depends on data quality. Let's keep it for now.
+                    AND c.date <= '{calculation_year}-12-31'
+                    AND (c.date_c IS NULL OR c.date_c >= '{calculation_year}-01-01')
+                    AND c.operation = 1
             GROUP BY
                 b.{border_cd}
             ORDER BY
@@ -1088,9 +1088,9 @@ class HospitalBorderCalculator(BorderAbstractCalculator):
                 {border_tbl} AS b
                 LEFT JOIN {self.table_name} AS h
                     ON ST_Contains(b.geom, h.geom)
-                    AND h.date <= '{calculation_year}-12-31' -- Opened on or before the end of the year
-                    AND (h.date_c IS NULL OR h.date_c >= '{calculation_year}-01-01') -- Not closed before the start of the year
-                     -- AND h.operation = 1 -- Keep or remove this? Depends on data quality. Let's keep it for now.
+                    AND h.date <= '{calculation_year}-12-31'
+                    AND (h.date_c IS NULL OR h.date_c >= '{calculation_year}-01-01')
+                    AND h.operation = 1
             GROUP BY
                 b.{border_cd}
             ORDER BY
