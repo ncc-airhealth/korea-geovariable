@@ -53,9 +53,9 @@ cp .env.template .env
 
 # Run the application
 redis-server
-celery -A celery_app worker --loglevel=info
-celery -A celery_app flower --loglevel=debug
-uvicorn main:app --reload
+uv run celery -A celery_app worker --loglevel=info
+uv run celery -A celery_app flower --loglevel=debug
+uv run uvicorn main:app --reload
 ```
 
 ### Database Setup
