@@ -1,0 +1,73 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /app
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    command: uv run gunicorn -w 2 -k uvicorn.workers.UvicornWorker main:app --bind 0.0.0.0:8080
+    restart: unless-stopped
+    networks:
+      - local-dev
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /app
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    networks:
+      - local-dev
+    depends_on:
+      - redis
+    command: uv run celery -A celery_app worker --loglevel=info
+    restart: unless-stopped
+
+  flower:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /app
+    ports:
+      - "5555:5555"
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    networks:
+      - local-dev
+    depends_on:
+      - redis
+      - worker
+    command: uv run celery -A celery_app flower --loglevel=debug --port=5555
+    restart: unless-stopped
+
+  redis:
+    image: redis:latest
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redis_data:/data
+    networks:
+      - local-dev
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 1m30s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+
+networks:
+  local-dev:
+    name: local-dev

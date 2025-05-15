@@ -58,6 +58,29 @@ uv run celery -A celery_app flower --loglevel=debug
 uv run uvicorn main:app --reload
 ```
 
+### Docker Compose Setup
+
+You can also run the application using Docker Compose:
+
+```bash
+# Clone repository
+git clone https://github.com/ncc-airhealth/korea-geovariable
+cd korea-geovariable
+
+# Set up environment variables
+cp .env.template .env
+# Edit .env with your configuration
+
+# Build and start services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop services
+docker-compose down
+```
+
 ### Database Setup
 
 > **Note**: To obtain the database URL, please contact the system administrators:

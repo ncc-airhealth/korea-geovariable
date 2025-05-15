@@ -1,11 +1,16 @@
+import os
+
 from celery import Celery
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Configure Celery
 celery_app = Celery(
     "tasks",
-    broker="redis://localhost:6379/0",  # Default Redis URL
-    backend="redis://localhost:6379/0",  # Default Redis URL
-    include=["tasks"],  # List of modules to import when the worker starts
+    broker=os.getenv("REDIS_BROKER", "redis://redis:6379/0"),
+    backend=os.getenv("REDIS_BACKEND", "redis://redis:6379/0"),
+    include=["tasks"],
 )
 
 # Optional configuration settings
