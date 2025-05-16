@@ -156,7 +156,7 @@ class EmissionCalculator(BorderAbstractCalculator):
 
     def __init__(self, border_type: BorderType, year: int):
         super().__init__(border_type, year)
-        border_year_map = {2001: 2000, 2005: 2005, 2010: 2010, 2015: 2015, 2019: 2020}
+        border_year_map = {2000: 2000, 2005: 2005, 2010: 2010, 2015: 2015, 2020: 2020}
         self.border_tbl = self.border_tbl.replace(f"{year}", f"{border_year_map[year]}")
 
     @property
@@ -169,7 +169,7 @@ class EmissionCalculator(BorderAbstractCalculator):
 
     @property
     def valid_years(self) -> list[int]:
-        return [2001, 2005, 2010, 2015, 2019]
+        return [2000, 2005, 2010, 2015, 2020]
 
     def calculate(self) -> pd.DataFrame:
         """

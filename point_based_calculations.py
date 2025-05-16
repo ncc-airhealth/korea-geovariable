@@ -1087,7 +1087,7 @@ class EmissionVectorBasedCalculator(PointAbstractCalculator):
 
     @property
     def valid_years(self) -> list[int]:
-        return [2010, 2015, 2019]
+        return [2000, 2005, 2010, 2015, 2020]
 
     def calculate(self) -> pd.DataFrame:
         """
@@ -1234,7 +1234,7 @@ class EmissionRasterValueCalculator(PointAbstractCalculator):
 
     @property
     def valid_years(self) -> list[int]:
-        return [2001, 2005, 2010]  # Example valid years, adjust as needed
+        return [2000, 2005, 2010, 2015, 2020]
 
     def validate_emission_type(self) -> None:
         """
