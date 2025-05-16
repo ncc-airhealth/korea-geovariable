@@ -98,3 +98,4 @@ out
 landuse_dump
 dump.rdb
 .env.production
+.env.readonly
