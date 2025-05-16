@@ -3,6 +3,7 @@ import os
 from celery.result import AsyncResult
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Security
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security.api_key import APIKeyHeader
 
 import tasks  # Import all tasks
@@ -14,6 +15,15 @@ from celery_app import celery_app  # Import celery app instance
 load_dotenv()
 
 app = FastAPI()
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
 
 # API Key authentication
 API_KEY = os.environ.get("API_KEY")
