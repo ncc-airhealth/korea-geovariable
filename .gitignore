@@ -97,5 +97,4 @@ out/jgg_centroid/relative_dem
 out
 landuse_dump
 dump.rdb
-
 .env.production
