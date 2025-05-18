@@ -3,7 +3,21 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    working_dir: /app
+    develop:
+      # Create a `watch` configuration to update the app
+      #
+      watch:
+        # Sync the working directory with the `/app` directory in the container
+        - action: sync
+          path: .
+          target: /app
+          # Exclude the project virtual environment
+          ignore:
+            - .venv/
+
+        # Rebuild the image on changes to the `pyproject.toml`
+        - action: rebuild
+          path: ./pyproject.toml
     ports:
       - "8080:8080"
       - "8081:8080"
@@ -20,7 +34,21 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    working_dir: /app
+    develop:
+      # Create a `watch` configuration to update the app
+      #
+      watch:
+        # Sync the working directory with the `/app` directory in the container
+        - action: sync
+          path: .
+          target: /app
+          # Exclude the project virtual environment
+          ignore:
+            - .venv/
+
+        # Rebuild the image on changes to the `pyproject.toml`
+        - action: rebuild
+          path: ./pyproject.toml
     env_file:
       - .env
     networks:
@@ -34,7 +62,21 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    working_dir: /app
+    develop:
+      # Create a `watch` configuration to update the app
+      #
+      watch:
+        # Sync the working directory with the `/app` directory in the container
+        - action: sync
+          path: .
+          target: /app
+          # Exclude the project virtual environment
+          ignore:
+            - .venv/
+
+        # Rebuild the image on changes to the `pyproject.toml`
+        - action: rebuild
+          path: ./pyproject.toml
     ports:
       - "5555:5555"
     env_file:

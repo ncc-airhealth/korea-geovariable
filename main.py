@@ -41,7 +41,7 @@ async def get_api_key(api_key_header: str = Security(api_key_header)):
 
 
 # --- Status Check Endpoint ---
-@app.get("/job_status/{task_id}", dependencies=[Depends(get_api_key)])
+@app.get("/job_status/", dependencies=[Depends(get_api_key)])
 def get_job_status(task_id: str):
     """Check the status of a submitted job."""
     task_result = AsyncResult(task_id, app=celery_app)
