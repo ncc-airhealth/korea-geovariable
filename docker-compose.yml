@@ -1,8 +1,17 @@
 services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.bun
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+    networks:
+      - local-dev
   api:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.python
     develop:
       # Create a `watch` configuration to update the app
       #
@@ -19,8 +28,7 @@ services:
         - action: rebuild
           path: ./pyproject.toml
     ports:
-      - "8080:8080"
-      - "8081:8080"
+      - "8000:8080"
     env_file:
       - .env
     depends_on:
@@ -33,7 +41,7 @@ services:
   worker:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.python
     develop:
       # Create a `watch` configuration to update the app
       #
@@ -61,7 +69,7 @@ services:
   flower:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.python
     develop:
       # Create a `watch` configuration to update the app
       #
@@ -93,7 +101,7 @@ services:
     image: redis:latest
     container_name: redis
     ports:
-      - "6380:6379"
+      - "6379:6379"
     networks:
       - local-dev
     healthcheck:

@@ -3,6 +3,8 @@ postgis-data
 **/*.pdf
 **.DS_Store
 credentials
+dist/*
+node_modules/*
 
 .idea
 .python-version
@@ -99,3 +101,4 @@ landuse_dump
 dump.rdb
 .env.production
 .env.readonly
+.cursor/mcp.json
