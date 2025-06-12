@@ -10,6 +10,7 @@ import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 import Landing from "./pages/Landing";
 import CoordinateFiles from "./pages/CoordinateFiles";
+import PointCalculations from "./pages/PointCalculations";
 
 const queryClient = new QueryClient();
 
@@ -25,6 +26,7 @@ const App = () => (
             <Route path="/dashboard" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/coordinates" element={<CoordinateFiles />} />
+            <Route path="/point-calculations" element={<PointCalculations />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

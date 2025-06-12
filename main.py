@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security.api_key import APIKeyHeader
+from pydantic import BaseModel
+from typing import List
 
 import tasks  # Import all tasks
 from border_based_calculations_by_year import (
@@ -43,18 +45,15 @@ async def get_api_key(api_key_header: str = Security(api_key_header)):
 # --- Status Check Endpoint ---
 @app.get("/job_status/", dependencies=[Depends(get_api_key)])
 def get_job_status(task_id: str):
-    """Check the status of a submitted job."""
+    """Check the status of a submitted job with progress support."""
     task_result = AsyncResult(task_id, app=celery_app)
 
-    response = {"task_id": task_id, "status": task_result.status, "result": None}
+    response = {"task_id": task_id, "status": task_result.status, "result": None, "progress": None}
 
     if task_result.successful():
         response["result"] = task_result.get()
     elif task_result.failed():
-        # Access the custom error info stored in meta
         try:
-            # Celery stores traceback/exception info differently depending on version/config
-            # Try accessing the meta info we set
             error_info = (
                 task_result.info
                 if isinstance(task_result.info, dict)
@@ -63,7 +62,8 @@ def get_job_status(task_id: str):
             response["result"] = error_info
         except Exception:
             response["result"] = "Failed to retrieve error details."
-    # Handle other states like PENDING, STARTED, RETRY if needed
+    elif task_result.status == "PROGRESS":
+        response["progress"] = task_result.info
 
     return response
 
@@ -156,6 +156,42 @@ def border_clinic_count(border_type: BorderType, year: int):
 @app.post("/border/hospital_count/", dependencies=[Depends(get_api_key)])
 def border_hospital_count(border_type: BorderType, year: int):
     task = tasks.calculate_border_hospital_count_task.delay(border_type.value, year)
+    return {"task_id": task.id}
+
+
+class PointCalculationRequest(BaseModel):
+    coordinates: List[List[float]]
+    buffer_size: int
+    year: int
+
+class CSVCalculationRequest(BaseModel):
+    file_id: str
+    calculator_type: str
+    buffer_size: int
+    year: int
+
+@app.post("/point/bus_stop/", dependencies=[Depends(get_api_key)])
+def point_bus_stop(request: PointCalculationRequest):
+    """Calculate bus stop counts for given coordinates."""
+    task = tasks.calculate_point_bus_stop_count_task.delay(
+        request.coordinates, request.buffer_size, request.year
+    )
+    return {"task_id": task.id}
+
+@app.post("/point/hospital/", dependencies=[Depends(get_api_key)])
+def point_hospital(request: PointCalculationRequest):
+    """Calculate hospital counts for given coordinates."""
+    task = tasks.calculate_point_hospital_count_task.delay(
+        request.coordinates, request.buffer_size, request.year
+    )
+    return {"task_id": task.id}
+
+@app.post("/csv/calculate/", dependencies=[Depends(get_api_key)])
+def csv_calculate(request: CSVCalculationRequest):
+    """Process entire CSV file for point-based calculations."""
+    task = tasks.calculate_csv_file_task.delay(
+        request.file_id, request.calculator_type, request.buffer_size, request.year
+    )
     return {"task_id": task.id}
 
 
