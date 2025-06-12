@@ -1393,6 +1393,211 @@ class EmissionRasterValueCalculator(PointAbstractCalculator):
             raise
 
 
+class CustomPointAbstractCalculator(ABC):
+    """Base class for point-based calculations with custom coordinates."""
+
+    def __init__(self, year: int, coordinates: list[tuple[float, float]]):
+        """
+        Initialize calculator with year and coordinates.
+
+        Args:
+            year: Reference year for the calculation
+            coordinates: List of (x, y) coordinate tuples
+        """
+        self.year = year
+        self.coordinates = coordinates
+
+    @property
+    @abstractmethod
+    def table_name(self) -> str:
+        """Name of the table to query."""
+        pass
+
+    @property
+    @abstractmethod
+    def label_prefix(self) -> str:
+        """Prefix for the count column label."""
+        pass
+
+    @property
+    @abstractmethod
+    def valid_years(self) -> list[int]:
+        """List of valid years for this calculator."""
+        pass
+
+    @abstractmethod
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the point-based calculation.
+
+        Returns:
+            DataFrame containing calculation results
+        """
+        pass
+
+    def validate_year(self) -> None:
+        """
+        Validate if the year is valid for this calculation.
+
+        Raises:
+            ValueError: If the year is invalid
+        """
+        if self.year not in self.valid_years:
+            valid_years_str = ", ".join(map(str, self.valid_years))
+            raise ValueError(
+                f"Invalid year {self.year}. Valid years are: {valid_years_str}"
+            )
+
+
+class CustomPointBufferCountCalculator(CustomPointAbstractCalculator):
+    """Calculator for buffer count around custom points."""
+
+    def __init__(self, buffer_size: BufferSize, year: int, coordinates: list[tuple[float, float]]):
+        super().__init__(year, coordinates)
+        self.buffer_size = buffer_size
+
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the point-based calculation for custom coordinates.
+
+        Returns:
+            DataFrame containing calculation results
+        """
+        self.validate_year()
+        column_name = f"{self.label_prefix}_{str(self.buffer_size.value).zfill(4)}"
+        
+        results = []
+        for i, (x, y) in enumerate(self.coordinates):
+            sql = text(
+                f"""
+                SELECT
+                    {i} as point_id,
+                    {x} as x,
+                    {y} as y,
+                    COUNT(t.*) as "{column_name}"
+                FROM
+                    public.{self.table_name} t
+                WHERE
+                    ST_DWithin(
+                        ST_SetSRID(ST_MakePoint({x}, {y}), 5179),
+                        t.geometry,
+                        {self.buffer_size.value}
+                    )
+                    AND t.year = {self.year}
+                """
+            )
+            
+            try:
+                result = conn.execute(sql)
+                rows = result.all()
+                if rows:
+                    results.extend([dict(row._mapping) for row in rows])
+                else:
+                    results.append({
+                        'point_id': i,
+                        'x': x,
+                        'y': y,
+                        column_name: 0
+                    })
+            except Exception as e:
+                logger.error(f"Error in {self.__class__.__name__} for point {i}: {e}")
+                results.append({
+                    'point_id': i,
+                    'x': x,
+                    'y': y,
+                    column_name: 0
+                })
+        
+        return pd.DataFrame(results)
+
+
+class CustomBusStopCountCalculator(CustomPointBufferCountCalculator):
+    """Calculator for bus stop points around custom coordinates."""
+
+    @property
+    def table_name(self) -> str:
+        return "bus_stop"
+
+    @property
+    def label_prefix(self) -> str:
+        return "C_Bus"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2023]
+
+
+class CustomHospitalCountCalculator(CustomPointBufferCountCalculator):
+    """Calculator for hospital counts around custom coordinates."""
+
+    @property
+    def table_name(self) -> str:
+        return "hospitals"
+
+    @property
+    def label_prefix(self) -> str:
+        return "C_Hospital"
+
+    @property
+    def valid_years(self) -> list[int]:
+        return [2000, 2005, 2010, 2015, 2020]
+
+    def calculate(self) -> pd.DataFrame:
+        """
+        Execute the point-based calculation for hospital counts with date filtering.
+
+        Returns:
+            DataFrame containing calculation results
+        """
+        self.validate_year()
+        column_name = f"{self.label_prefix}_{self.year}_{str(self.buffer_size.value).zfill(4)}"
+        
+        results = []
+        for i, (x, y) in enumerate(self.coordinates):
+            sql = text(
+                f"""
+                SELECT
+                    {i} as point_id,
+                    {x} as x,
+                    {y} as y,
+                    COUNT(t.*) as "{column_name}"
+                FROM
+                    public.{self.table_name} t
+                WHERE
+                    ST_DWithin(
+                        ST_SetSRID(ST_MakePoint({x}, {y}), 5179),
+                        t.geom,
+                        {self.buffer_size.value}
+                    )
+                    AND CAST(SUBSTRING(t.date, 1, 4) AS INTEGER) <= {self.year}
+                    AND (t.date_c IS NULL OR CAST(SUBSTRING(t.date_c, 1, 4) AS INTEGER) >= {self.year})
+                """
+            )
+            
+            try:
+                result = conn.execute(sql)
+                rows = result.all()
+                if rows:
+                    results.extend([dict(row._mapping) for row in rows])
+                else:
+                    results.append({
+                        'point_id': i,
+                        'x': x,
+                        'y': y,
+                        column_name: 0
+                    })
+            except Exception as e:
+                logger.error(f"Error in {self.__class__.__name__} for point {i}: {e}")
+                results.append({
+                    'point_id': i,
+                    'x': x,
+                    'y': y,
+                    column_name: 0
+                })
+        
+        return pd.DataFrame(results)
+
+
 class RoadLengthCalculator(PointAbstractCalculator):
     def __init__(self, buffer_size: BufferSize, year: int):
         super().__init__(year)
