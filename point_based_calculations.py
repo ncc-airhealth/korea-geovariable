@@ -1210,7 +1210,13 @@ class EmissionRasterValueCalculator(PointAbstractCalculator):
     # TODO: data is corrupted
     """Calculator for emission raster values."""
 
-    def __init__(self, buffer_size: EmissionBufferSize, year: int):
+    def __init__(
+        self,
+        buffer_size: EmissionBufferSize,
+        year: int,
+        emission_type: str,
+        pollutant_type: str,
+    ):
         """
         Initialize calculator with buffer size and year.
 
@@ -1288,99 +1294,6 @@ class EmissionRasterValueCalculator(PointAbstractCalculator):
               AND dst.emission_type = '{self.emission_type}'
               AND dst.pollutant_type = '{self.pollutant_type}'
             ORDER BY src.tot_reg_cd;
-
-                WITH tmp AS (
-                    SELECT
-                        a.tot_reg_cd,
-                        'emission_area' AS tablename,
-                        COALESCE(SUM(b.co),
-                            0) AS co,
-                        COALESCE(SUM(b.nox),
-                            0) AS nox,
-                        COALESCE(SUM(b.nh3),
-                            0) AS nh3,
-                        COALESCE(SUM(b.voc),
-                            0) AS voc,
-                        COALESCE(SUM(b.pm10),
-                            0) AS pm10,
-                        COALESCE(SUM(b.sox),
-                            0) AS sox,
-                        COALESCE(SUM(b.tsp),
-                            0) AS tsp
-                    FROM
-                        "jgg_centroid_adjusted" AS a
-                    LEFT JOIN emission_point AS b ON ST_Contains(ST_Buffer(a.geom,
-                            {buffer}),
-                        b.geometry)
-                        AND b.year = {emission_year}
-                GROUP BY
-                    a.tot_reg_cd
-                UNION
-                SELECT
-                    a.tot_reg_cd,
-                    'emission_line' AS tablename,
-                    COALESCE(SUM(b.co),
-                        0) AS co,
-                    COALESCE(SUM(b.nox),
-                        0) AS nox,
-                    COALESCE(SUM(b.nh3),
-                        0) AS nh3,
-                    COALESCE(SUM(b.voc),
-                        0) AS voc,
-                    COALESCE(SUM(b.pm10),
-                        0) AS pm10,
-                    COALESCE(SUM(b.sox),
-                        0) AS sox,
-                    COALESCE(SUM(b.tsp),
-                        0) AS tsp
-                FROM
-                    "jgg_centroid_adjusted" AS a
-                    LEFT JOIN emission_line AS b ON ST_Contains(ST_Buffer(a.geom,
-                            {buffer}),
-                        b.geometry)
-                        AND b.year = {emission_year}
-                GROUP BY
-                    a.tot_reg_cd
-                UNION
-                SELECT
-                    a.tot_reg_cd,
-                    'emission_point' AS tablename,
-                    COALESCE(SUM(b.co),
-                        0) AS co,
-                    COALESCE(SUM(b.nox),
-                        0) AS nox,
-                    COALESCE(SUM(b.nh3),
-                        0) AS nh3,
-                    COALESCE(SUM(b.voc),
-                        0) AS voc,
-                    COALESCE(SUM(b.pm10),
-                        0) AS pm10,
-                    COALESCE(SUM(b.sox),
-                        0) AS sox,
-                    COALESCE(SUM(b.tsp),
-                        0) AS tsp
-                FROM
-                    "jgg_centroid_adjusted" AS a
-                    LEFT JOIN emission_area AS b ON ST_Contains(ST_Buffer(a.geom,
-                            {buffer}),
-                        b.geometry)
-                        AND b.year = {emission_year}
-                GROUP BY
-                    a.tot_reg_cd
-                )
-                SELECT
-                    tmp.tot_reg_cd,
-                    sum(co) as "{self.label_prefix}_CO_{label_postfix}",
-                    sum(nox) as "{self.label_prefix}_NOx_{label_postfix}",
-                    sum(nh3) as "{self.label_prefix}_NH3_{label_postfix}",
-                    sum(voc) as "{self.label_prefix}_VOC_{label_postfix}",
-                    sum(pm10) as "{self.label_prefix}_PM10_{label_postfix}",
-                    sum(sox) as "{self.label_prefix}_SOx_{label_postfix}",
-                    sum(tsp) as "{self.label_prefix}_TSP_{label_postfix}"
-                FROM
-                    tmp
-                GROUP BY
-                    tot_reg_cd;
             """
         )
 
@@ -1396,16 +1309,20 @@ class EmissionRasterValueCalculator(PointAbstractCalculator):
 class CustomPointAbstractCalculator(ABC):
     """Base class for point-based calculations with custom coordinates."""
 
-    def __init__(self, year: int, coordinates: list[tuple[float, float]]):
+    def __init__(
+        self, year: int, coordinates: list[tuple[float, float]], srid: int = 4326
+    ):
         """
-        Initialize calculator with year and coordinates.
+        Initialize calculator with year, coordinates, and SRID.
 
         Args:
             year: Reference year for the calculation
             coordinates: List of (x, y) coordinate tuples
+            srid: Spatial Reference System Identifier (default: 4326 for WGS84)
         """
         self.year = year
         self.coordinates = coordinates
+        self.srid = srid
 
     @property
     @abstractmethod
@@ -1452,8 +1369,14 @@ class CustomPointAbstractCalculator(ABC):
 class CustomPointBufferCountCalculator(CustomPointAbstractCalculator):
     """Calculator for buffer count around custom points."""
 
-    def __init__(self, buffer_size: BufferSize, year: int, coordinates: list[tuple[float, float]]):
-        super().__init__(year, coordinates)
+    def __init__(
+        self,
+        buffer_size: BufferSize,
+        year: int,
+        coordinates: list[tuple[float, float]],
+        srid: int = 4326,
+    ):
+        super().__init__(year, coordinates, srid)
         self.buffer_size = buffer_size
 
     def calculate(self) -> pd.DataFrame:
@@ -1465,13 +1388,20 @@ class CustomPointBufferCountCalculator(CustomPointAbstractCalculator):
         """
         self.validate_year()
         column_name = f"{self.label_prefix}_{str(self.buffer_size.value).zfill(4)}"
-        
+
         results = []
         for i, (x, y) in enumerate(self.coordinates):
+            _i = i + 1
+            # Transform coordinates if not in EPSG:5179 (Korean coordinate system)
+            if self.srid != 5179:
+                transform_clause = f"ST_Transform(ST_SetSRID(ST_MakePoint({x}, {y}), {self.srid}), 5179)"
+            else:
+                transform_clause = f"ST_SetSRID(ST_MakePoint({x}, {y}), 5179)"
+
             sql = text(
                 f"""
                 SELECT
-                    {i} as point_id,
+                    {_i} as point_id,
                     {x} as x,
                     {y} as y,
                     COUNT(t.*) as "{column_name}"
@@ -1479,35 +1409,25 @@ class CustomPointBufferCountCalculator(CustomPointAbstractCalculator):
                     public.{self.table_name} t
                 WHERE
                     ST_DWithin(
-                        ST_SetSRID(ST_MakePoint({x}, {y}), 5179),
+                        {transform_clause},
                         t.geometry,
                         {self.buffer_size.value}
                     )
                     AND t.year = {self.year}
                 """
             )
-            
+
             try:
                 result = conn.execute(sql)
                 rows = result.all()
                 if rows:
                     results.extend([dict(row._mapping) for row in rows])
                 else:
-                    results.append({
-                        'point_id': i,
-                        'x': x,
-                        'y': y,
-                        column_name: 0
-                    })
+                    results.append({"point_id": _i, "x": x, "y": y, column_name: 0})
             except Exception as e:
-                logger.error(f"Error in {self.__class__.__name__} for point {i}: {e}")
-                results.append({
-                    'point_id': i,
-                    'x': x,
-                    'y': y,
-                    column_name: 0
-                })
-        
+                logger.error(f"Error in {self.__class__.__name__} for point {_i}: {e}")
+                results.append({"point_id": _i, "x": x, "y": y, column_name: 0})
+
         return pd.DataFrame(results)
 
 
@@ -1550,14 +1470,23 @@ class CustomHospitalCountCalculator(CustomPointBufferCountCalculator):
             DataFrame containing calculation results
         """
         self.validate_year()
-        column_name = f"{self.label_prefix}_{self.year}_{str(self.buffer_size.value).zfill(4)}"
-        
+        column_name = (
+            f"{self.label_prefix}_{self.year}_{str(self.buffer_size.value).zfill(4)}"
+        )
+
         results = []
         for i, (x, y) in enumerate(self.coordinates):
+            _i = i + 1
+            # Transform coordinates if not in EPSG:5179 (Korean coordinate system)
+            if self.srid != 5179:
+                transform_clause = f"ST_Transform(ST_SetSRID(ST_MakePoint({x}, {y}), {self.srid}), 5179)"
+            else:
+                transform_clause = f"ST_SetSRID(ST_MakePoint({x}, {y}), 5179)"
+
             sql = text(
                 f"""
                 SELECT
-                    {i} as point_id,
+                    {_i} as point_id,
                     {x} as x,
                     {y} as y,
                     COUNT(t.*) as "{column_name}"
@@ -1565,7 +1494,7 @@ class CustomHospitalCountCalculator(CustomPointBufferCountCalculator):
                     public.{self.table_name} t
                 WHERE
                     ST_DWithin(
-                        ST_SetSRID(ST_MakePoint({x}, {y}), 5179),
+                        {transform_clause},
                         t.geom,
                         {self.buffer_size.value}
                     )
@@ -1573,28 +1502,18 @@ class CustomHospitalCountCalculator(CustomPointBufferCountCalculator):
                     AND (t.date_c IS NULL OR CAST(SUBSTRING(t.date_c, 1, 4) AS INTEGER) >= {self.year})
                 """
             )
-            
+
             try:
                 result = conn.execute(sql)
                 rows = result.all()
                 if rows:
                     results.extend([dict(row._mapping) for row in rows])
                 else:
-                    results.append({
-                        'point_id': i,
-                        'x': x,
-                        'y': y,
-                        column_name: 0
-                    })
+                    results.append({"point_id": _i, "x": x, "y": y, column_name: 0})
             except Exception as e:
-                logger.error(f"Error in {self.__class__.__name__} for point {i}: {e}")
-                results.append({
-                    'point_id': i,
-                    'x': x,
-                    'y': y,
-                    column_name: 0
-                })
-        
+                logger.error(f"Error in {self.__class__.__name__} for point {_i}: {e}")
+                results.append({"point_id": _i, "x": x, "y": y, column_name: 0})
+
         return pd.DataFrame(results)
 
 
