@@ -1,5 +1,5 @@
 services:
-  frontend:
+  kg-frontend:
     build:
       context: .
       dockerfile: Dockerfile.bun
@@ -8,10 +8,18 @@ services:
     restart: unless-stopped
     networks:
       - local-dev
-  api:
+  kg-api:
     build:
       context: .
       dockerfile: Dockerfile.python
+    volumes:
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./celery_app.py:/app/celery_app.py
+      - ./tasks.py:/app/tasks.py
+      - ./celery_app.py:/app/celery_app.py
+      - ./border_based_calculations_by_year.py:/app/border_based_calculations_by_year.py
+      - ./point_based_calculations.py:/app/point_based_calculations.py
+      - ./main.py:/app/main.py
     develop:
       # Create a `watch` configuration to update the app
       #
@@ -32,16 +40,21 @@ services:
     env_file:
       - .env
     depends_on:
-      - redis
+      - kg-redis
     command: uv run gunicorn -w 2 -k uvicorn.workers.UvicornWorker main:app --bind 0.0.0.0:8080
     restart: unless-stopped
     networks:
       - local-dev
 
-  worker:
+  kg-worker:
     build:
       context: .
       dockerfile: Dockerfile.python
+    volumes:
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./celery_app.py:/app/celery_app.py
+      - ./tasks.py:/app/tasks.py
+      - ./celery_app.py:/app/celery_app.py
     develop:
       # Create a `watch` configuration to update the app
       #
@@ -62,44 +75,13 @@ services:
     networks:
       - local-dev
     depends_on:
-      - redis
+      - kg-redis
     command: uv run celery -A celery_app worker --loglevel=info
     restart: unless-stopped
 
-  flower:
-    build:
-      context: .
-      dockerfile: Dockerfile.python
-    develop:
-      # Create a `watch` configuration to update the app
-      #
-      watch:
-        # Sync the working directory with the `/app` directory in the container
-        - action: sync
-          path: .
-          target: /app
-          # Exclude the project virtual environment
-          ignore:
-            - .venv/
-
-        # Rebuild the image on changes to the `pyproject.toml`
-        - action: rebuild
-          path: ./pyproject.toml
-    ports:
-      - "5555:5555"
-    env_file:
-      - .env
-    networks:
-      - local-dev
-    depends_on:
-      - redis
-      - worker
-    command: uv run celery -A celery_app flower --loglevel=debug --port=5555
-    restart: unless-stopped
-
-  redis:
+  kg-redis:
     image: redis:latest
-    container_name: redis
+    container_name: kg-redis
     ports:
       - "6379:6379"
     networks:

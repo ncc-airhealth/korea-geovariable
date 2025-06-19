@@ -212,3 +212,107 @@ export const getTestResults = async () => {
     throw error;
   }
 };
+
+export const POINT_ENDPOINTS = [
+  {
+    name: 'Bus Stop Count',
+    path: '/point/bus_stop/',
+    description: 'Calculate bus stop counts within buffer around points',
+    category: 'Transport'
+  },
+  {
+    name: 'Hospital Count',
+    path: '/point/hospital/',
+    description: 'Calculate hospital counts within buffer around points',
+    category: 'Healthcare'
+  }
+];
+
+export const runPointCalculation = async (
+  coordinates: number[][],
+  calculatorType: string,
+  bufferSize: number,
+  year: number
+): Promise<string> => {
+  const userId = (await supabase.auth.getUser()).data.user?.id;
+
+  if (!userId) {
+    throw new Error('User not authenticated');
+  }
+
+  const endpoint = calculatorType === 'bus_stop' ? '/point/bus_stop/' : '/point/hospital/';
+  
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': API_KEY
+    },
+    body: JSON.stringify({ 
+      coordinates,
+      buffer_size: bufferSize,
+      year 
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.task_id;
+};
+
+export const runCSVCalculation = async (
+  fileId: string,
+  calculatorType: string,
+  bufferSize: number,
+  year: number
+): Promise<string> => {
+  const userId = (await supabase.auth.getUser()).data.user?.id;
+
+  if (!userId) {
+    throw new Error('User not authenticated');
+  }
+
+  const response = await fetch(`${API_BASE_URL}/csv/calculate/`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': API_KEY
+    },
+    body: JSON.stringify({ 
+      file_id: fileId,
+      calculator_type: calculatorType,
+      buffer_size: bufferSize,
+      year 
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.task_id;
+};
+
+export const getJobStatusWithProgress = async (task_id: string): Promise<any> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/job_status/${task_id}`, {
+      method: 'GET',
+      headers: {
+        'X-API-Key': API_KEY
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error(`Error getting job status for task ${task_id}:`, error);
+    throw error;
+  }
+};
